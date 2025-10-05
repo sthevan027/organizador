@@ -6,7 +6,10 @@ import shutil
 import sys
 import json
 import time
+import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Tuple, Optional
 
 DEFAULT_MAP = {
     "Imagens": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".svg", ".heic"],
@@ -32,14 +35,34 @@ FOLDER_KEYWORDS = {
     "Design": ["design", "art", "creative", "photoshop", "illustrator"]
 }
 
+# Cache para configurações
+_config_cache: Dict[str, Dict[str, List[str]]] = {}
 
-def load_map(config_path: Path | None):
-    """Carrega o mapa de extensões do arquivo de configuração ou usa o padrão."""
-    if config_path and config_path.exists():
-        with config_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        # normaliza extensões para minúsculas e com ponto
-        return {k: [e.lower() if e.startswith(".") else f".{e.lower()}" for e in v] for k, v in data.items()}
+
+def load_map(config_path: Optional[Path] = None) -> Dict[str, List[str]]:
+    """Carrega o mapa de extensões do arquivo de configuração ou usa o padrão com cache."""
+    if config_path is None:
+        return DEFAULT_MAP
+    
+    config_key = str(config_path)
+    
+    # Verifica cache primeiro
+    if config_key in _config_cache:
+        return _config_cache[config_key]
+    
+    if config_path.exists():
+        try:
+            with config_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            # normaliza extensões para minúsculas e com ponto
+            normalized_data = {k: [e.lower() if e.startswith(".") else f".{e.lower()}" for e in v] for k, v in data.items()}
+            # Armazena no cache
+            _config_cache[config_key] = normalized_data
+            return normalized_data
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Erro ao carregar configuração: {e}")
+            return DEFAULT_MAP
+    
     return DEFAULT_MAP
 
 
@@ -65,16 +88,26 @@ def guess_folder_type(folder_name: str, unknown_name: str):
     return unknown_name
 
 
-def analyze_folder_content(folder_path: Path, ext_map: dict[str, list[str]]):
-    """Analisa o conteúdo de uma pasta para determinar sua categoria."""
+def analyze_folder_content(folder_path: Path, ext_map: Dict[str, List[str]], max_files: int = 50) -> str:
+    """Analisa o conteúdo de uma pasta para determinar sua categoria (otimizado)."""
     file_types = {}
+    file_count = 0
     
     try:
-        for item in folder_path.iterdir():
-            if item.is_file():
-                ext = item.suffix.lower()
+        # Usa os.listdir() que é mais rápido que Path.iterdir() para muitos arquivos
+        items = os.listdir(folder_path)
+        
+        for item_name in items:
+            if file_count >= max_files:  # Limita análise para performance
+                break
+                
+            item_path = folder_path / item_name
+            if item_path.is_file():
+                ext = item_path.suffix.lower()
                 category = guess_folder(ext, ext_map, "Outros")
                 file_types[category] = file_types.get(category, 0) + 1
+                file_count += 1
+                
     except (PermissionError, OSError):
         return "Outros"
     
@@ -90,6 +123,34 @@ def human(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
+def process_file(file_path: Path, target_path: Path, mode: str, dry_run: bool) -> Tuple[bool, str]:
+    """Processa um arquivo individual (para uso em threads)."""
+    try:
+        if dry_run:
+            action = "COPIAR" if mode == "copy" else "MOVER"
+            return True, f"[DRY-RUN] {action}: {file_path.name} -> {target_path}"
+        else:
+            # Sempre copia primeiro
+            shutil.copy2(file_path, target_path)
+            return True, f"[OK] COPIAR: {file_path.name} -> {target_path}"
+    except Exception as e:
+        return False, f"[ERRO] {file_path.name}: {e}"
+
+
+def process_folder(folder_path: Path, target_path: Path, mode: str, dry_run: bool) -> Tuple[bool, str]:
+    """Processa uma pasta individual (para uso em threads)."""
+    try:
+        if dry_run:
+            action = "COPIAR" if mode == "copy" else "MOVER"
+            return True, f"[DRY-RUN] {action} PASTA: {folder_path.name} -> {target_path}"
+        else:
+            # Sempre copia primeiro
+            shutil.copytree(folder_path, target_path, dirs_exist_ok=True)
+            return True, f"[OK] COPIAR PASTA: {folder_path.name} -> {target_path}"
+    except Exception as e:
+        return False, f"[ERRO] PASTA {folder_path.name}: {e}"
+
+
 def organize(
     source: Path,
     dest_root: Path,
@@ -97,9 +158,10 @@ def organize(
     dry_run: bool,
     delete_empty: bool,
     unknown_name: str,
-    ext_map: dict[str, list[str]],
-    log_path: Path | None
-):
+    ext_map: Dict[str, List[str]],
+    log_path: Optional[Path] = None,
+    max_workers: int = 4
+) -> Tuple[str, int, int, int]:
     """
     Organiza arquivos da pasta source para dest_root baseado nas extensões.
     
@@ -126,9 +188,20 @@ def organize(
 
     dest_root.mkdir(parents=True, exist_ok=True)
 
+    # Cria um snapshot dos itens da pasta de origem para não incluir
+    # diretórios de destino que forem criados durante a execução
+    source_items = list(source.iterdir())
+
+    # Nomes de pastas de categorias (e desconhecidos) para ignorar
+    category_names = set(ext_map.keys()) | {unknown_name}
+
     # Primeira passada: organiza (copia) todos os arquivos
-    for p in source.iterdir():
+    for p in source_items:
         if p.is_dir():
+            # Pula pastas que já são categorias de destino (evita recursão)
+            if p.name in category_names:
+                continue
+                
             # Processa pastas
             try:
                 # Tenta determinar categoria pelo nome primeiro
