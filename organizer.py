@@ -20,6 +20,18 @@ DEFAULT_MAP = {
     "Fontes": [".ttf", ".otf", ".woff", ".woff2"]
 }
 
+# Mapeamento de palavras-chave para categorias de pastas
+FOLDER_KEYWORDS = {
+    "Imagens": ["foto", "image", "img", "picture", "screenshot", "print", "captura"],
+    "Documentos": ["doc", "document", "texto", "pdf", "word", "excel", "powerpoint"],
+    "Vídeos": ["video", "movie", "film", "mp4", "avi", "mkv", "youtube"],
+    "Áudio": ["audio", "music", "song", "mp3", "sound", "música"],
+    "Programas": ["program", "software", "app", "install", "setup", "exe"],
+    "Compactados": ["zip", "rar", "7z", "compact", "archive", "backup"],
+    "Código": ["code", "programming", "dev", "project", "source", "github"],
+    "Design": ["design", "art", "creative", "photoshop", "illustrator"]
+}
+
 
 def load_map(config_path: Path | None):
     """Carrega o mapa de extensões do arquivo de configuração ou usa o padrão."""
@@ -38,6 +50,39 @@ def guess_folder(ext: str, ext_map: dict[str, list[str]], unknown_name: str):
         if ext in exts:
             return folder
     return unknown_name
+
+
+def guess_folder_type(folder_name: str, unknown_name: str):
+    """Determina o tipo de pasta baseado no nome."""
+    folder_lower = folder_name.lower()
+    
+    # Verifica palavras-chave no nome da pasta
+    for category, keywords in FOLDER_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in folder_lower:
+                return category
+    
+    return unknown_name
+
+
+def analyze_folder_content(folder_path: Path, ext_map: dict[str, list[str]]):
+    """Analisa o conteúdo de uma pasta para determinar sua categoria."""
+    file_types = {}
+    
+    try:
+        for item in folder_path.iterdir():
+            if item.is_file():
+                ext = item.suffix.lower()
+                category = guess_folder(ext, ext_map, "Outros")
+                file_types[category] = file_types.get(category, 0) + 1
+    except (PermissionError, OSError):
+        return "Outros"
+    
+    if not file_types:
+        return "Outros"
+    
+    # Retorna a categoria com mais arquivos
+    return max(file_types, key=file_types.get)
 
 
 def human(n: int) -> str:
@@ -74,6 +119,7 @@ def organize(
     moved = skipped = errors = 0
     logs = []
     files_to_remove = []  # Lista de arquivos que serão removidos após verificação
+    folders_to_remove = []  # Lista de pastas que serão removidas após verificação
 
     if not source.exists() or not source.is_dir():
         raise RuntimeError(f"Pasta de origem inválida: {source}")
@@ -83,7 +129,43 @@ def organize(
     # Primeira passada: organiza (copia) todos os arquivos
     for p in source.iterdir():
         if p.is_dir():
+            # Processa pastas
+            try:
+                # Tenta determinar categoria pelo nome primeiro
+                target_folder = guess_folder_type(p.name, unknown_name)
+                
+                # Se não conseguiu pelo nome, analisa o conteúdo
+                if target_folder == unknown_name:
+                    target_folder = analyze_folder_content(p, ext_map)
+                
+                target_dir = dest_root / target_folder
+                target_dir.mkdir(parents=True, exist_ok=True)
+
+                target_path = target_dir / p.name
+                # evita sobrescrever: acrescenta contador
+                counter = 1
+                while target_path.exists() and target_path.resolve() != p.resolve():
+                    target_path = target_dir / f"{p.name} ({counter})"
+                    counter += 1
+
+                if dry_run:
+                    action = "COPIAR" if mode == "copy" else "MOVER"
+                    logs.append(f"[DRY-RUN] {action} PASTA: {p.name} -> {target_path}")
+                else:
+                    # Sempre copia primeiro
+                    shutil.copytree(p, target_path, dirs_exist_ok=True)
+                    logs.append(f"[OK] COPIAR PASTA: {p.name} -> {target_path}")
+                    moved += 1
+                    
+                    # Se for modo move, adiciona à lista para remoção posterior
+                    if mode == "move":
+                        folders_to_remove.append(p)
+                        
+            except Exception as e:
+                logs.append(f"[ERRO] PASTA {p.name}: {e}")
+                errors += 1
             continue
+            
         if p.name.startswith(".") and p.suffix == "":  # arquivos ocultos sem extensão
             skipped += 1
             continue
@@ -118,12 +200,14 @@ def organize(
             errors += 1
 
     # Segunda passada: verifica se tudo foi organizado com sucesso e remove originais
-    if mode == "move" and not dry_run and files_to_remove and errors == 0:
+    if mode == "move" and not dry_run and (files_to_remove or folders_to_remove) and errors == 0:
         logs.append("")
         logs.append("Verificando organização...")
         
         # Verifica se todos os arquivos foram copiados corretamente
         all_verified = True
+        
+        # Verifica arquivos
         for original_file in files_to_remove:
             target_folder = guess_folder(original_file.suffix, ext_map, unknown_name)
             target_dir = dest_root / target_folder
@@ -141,8 +225,24 @@ def organize(
                 all_verified = False
                 continue
         
+        # Verifica pastas
+        for original_folder in folders_to_remove:
+            target_folder = guess_folder_type(original_folder.name, unknown_name)
+            if target_folder == unknown_name:
+                target_folder = analyze_folder_content(original_folder, ext_map)
+            
+            target_dir = dest_root / target_folder
+            target_path = target_dir / original_folder.name
+            
+            # Verifica se a pasta existe no destino
+            if not target_path.exists():
+                logs.append(f"[ERRO] Pasta não encontrada no destino: {target_path}")
+                all_verified = False
+                continue
+        
         if all_verified:
-            logs.append("Verificação concluída com sucesso. Removendo arquivos originais...")
+            logs.append("Verificação concluída com sucesso. Removendo originais...")
+            
             # Remove os arquivos originais
             for original_file in files_to_remove:
                 try:
@@ -151,8 +251,17 @@ def organize(
                 except Exception as e:
                     logs.append(f"[ERRO] Falha ao remover {original_file.name}: {e}")
                     errors += 1
+            
+            # Remove as pastas originais
+            for original_folder in folders_to_remove:
+                try:
+                    shutil.rmtree(original_folder)
+                    logs.append(f"[OK] REMOVER PASTA: {original_folder.name}")
+                except Exception as e:
+                    logs.append(f"[ERRO] Falha ao remover pasta {original_folder.name}: {e}")
+                    errors += 1
         else:
-            logs.append("[AVISO] Verificação falhou. Arquivos originais mantidos por segurança.")
+            logs.append("[AVISO] Verificação falhou. Originais mantidos por segurança.")
             errors += 1
 
     # Remove subpastas vazias se solicitado
