@@ -1,0 +1,14 @@
+{
+  "Imagens": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".svg", ".heic"],
+  "Documentos": [".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".csv", ".xls", ".xlsx", ".ppt", ".pptx", ".md"],
+  "Compactados": [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"],
+  "Vídeos": [".mp4", ".mkv", ".mov", ".avi", ".wmv", ".flv", ".webm"],
+  "Áudio": [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a"],
+  "Programas": [".exe", ".msi", ".dmg", ".pkg", ".apk"],
+  "Código": [".py", ".js", ".ts", ".java", ".c", ".cpp", ".cs", ".php", ".go", ".rb", ".rs", ".sh", ".ps1"],
+  "Design": [".psd", ".ai", ".xd", ".fig", ".sketch", ".eps"],
+  "Fontes": [".ttf", ".otf", ".woff", ".woff2"],
+  "Planilhas": [".xls", ".xlsx", ".csv", ".ods"],
+  "Apresentações": [".ppt", ".pptx", ".odp"],
+  "Textos": [".txt", ".md", ".rtf", ".odt"]
+}

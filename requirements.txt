@@ -1,0 +1,12 @@
+# Organizador de Arquivos - Dependências
+# Este script usa apenas bibliotecas padrão do Python, não requer instalação de pacotes externos
+
+# Python 3.8+ é necessário para type hints com | (Union types)
+# Se estiver usando Python < 3.10, pode ser necessário ajustar os type hints
+
+# Para criar executável (.exe no Windows):
+# pip install pyinstaller
+# pyinstaller --onefile --windowed organizer.py
+
+# Para interface gráfica (futuro):
+# pip install tkinter  # Geralmente já vem com Python
