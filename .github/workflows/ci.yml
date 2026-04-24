@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "claude/*"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Testes — Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.10", "3.12"]
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Instalar dependências de teste
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+
+      - name: Executar testes
+        run: |
+          pytest tests/ -v --tb=short \
+            --cov=organizer \
+            --cov-report=term-missing \
+            --cov-fail-under=80
+
+      - name: Verificar CLI (--help funciona)
+        run: python organizer.py --help
+
+      - name: Verificar CLI (dry-run em pasta temporária)
+        run: |
+          mkdir -p /tmp/test_downloads
+          touch /tmp/test_downloads/foto.jpg
+          touch /tmp/test_downloads/documento.pdf
+          touch /tmp/test_downloads/musica.mp3
+          python organizer.py \
+            --source /tmp/test_downloads \
+            --dry-run \
+            --mode move
