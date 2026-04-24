@@ -265,6 +265,60 @@ class TestOrganizeDryRun:
         assert moved == 0 and errors == 0
 
 
+# ------------------------------------------------------------------ organize — edge cases
+
+class TestOrganizeEdgeCases:
+    def test_invalid_source_raises(self, tmp_path):
+        with pytest.raises(RuntimeError, match="inválida"):
+            organize(tmp_path / "nao_existe", tmp_path, "copy", False, False, "Outros", DEFAULT_MAP)
+
+    def test_move_aborts_if_copy_had_errors(self, tmp_path):
+        """Se houve erro na cópia, originais não devem ser removidos."""
+        from unittest.mock import patch
+        (tmp_path / "foto.jpg").write_bytes(b"img")
+        with patch("shutil.copy2", side_effect=OSError("permission denied")):
+            _, moved, _, errors = organize(tmp_path, tmp_path, "move", False, False, "Outros", DEFAULT_MAP)
+        assert errors > 0
+        assert (tmp_path / "foto.jpg").exists()  # original não removido
+
+    def test_folder_moved_in_move_mode(self, tmp_path):
+        subdir = tmp_path / "videos_legais"
+        subdir.mkdir()
+        (subdir / "filme.mp4").write_bytes(b"vid")
+        organize(tmp_path, tmp_path, "move", False, False, "Outros", DEFAULT_MAP)
+        assert (tmp_path / "Vídeos" / "videos_legais").exists()
+        assert not subdir.exists()
+
+    def test_folder_copy_in_copy_mode(self, tmp_path):
+        subdir = tmp_path / "fotos_viagem"
+        subdir.mkdir()
+        (subdir / "praia.jpg").write_bytes(b"img")
+        organize(tmp_path, tmp_path, "copy", False, False, "Outros", DEFAULT_MAP)
+        assert (tmp_path / "Imagens" / "fotos_viagem").exists()
+        assert subdir.exists()  # original mantido
+
+    def test_folder_dry_run(self, tmp_path):
+        subdir = tmp_path / "fotos_viagem"
+        subdir.mkdir()
+        (subdir / "praia.jpg").write_bytes(b"img")
+        report, _, _, _ = organize(tmp_path, tmp_path, "move", True, False, "Outros", DEFAULT_MAP)
+        assert "[DRY-RUN]" in report
+        assert subdir.exists()  # nada foi movido
+
+    def test_analyze_folder_content_max_files(self, tmp_path):
+        """Verifica que a análise para quando atinge max_files."""
+        for i in range(60):
+            (tmp_path / f"img_{i}.jpg").write_bytes(b"x")
+        result = analyze_folder_content(tmp_path, DEFAULT_MAP, max_files=10)
+        assert result == "Imagens"
+
+    def test_delete_empty_dry_run_does_not_delete(self, tmp_path):
+        empty = tmp_path / "vazia"
+        empty.mkdir()
+        organize(tmp_path, tmp_path, "move", True, True, "Outros", DEFAULT_MAP)
+        assert empty.exists()  # dry_run não remove
+
+
 # ------------------------------------------------------------------ organize — log
 
 class TestOrganizeLog:

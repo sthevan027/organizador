@@ -279,7 +279,7 @@ def organize(
     return output, moved, skipped, errors
 
 
-def main():
+def main():  # pragma: no cover
     """Ponto de entrada da linha de comando."""
     ap = argparse.ArgumentParser(
         description="Organizador automático de arquivos por extensão",
