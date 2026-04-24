@@ -20,6 +20,8 @@ FONT_FAMILY = "Segoe UI" if sys.platform == "win32" else "Helvetica"
 FONT = {
     "title": (FONT_FAMILY, 20, "bold"),
     "subtitle": (FONT_FAMILY, 11),
+    "header_title": (FONT_FAMILY, 16, "bold"),
+    "header_subtitle": (FONT_FAMILY, 10),
     "section": (FONT_FAMILY, 12, "bold"),
     "label": (FONT_FAMILY, 11),
     "small": (FONT_FAMILY, 10),
@@ -45,6 +47,9 @@ SPACING = {
     "xl": 28,
 }
 
+# Altura fixa do topo (barra de título visual interna)
+HEADER_BAR_HEIGHT = 56
+
 LIGHT: Dict[str, str] = {
     "bg": "#f3f4f6",
     "bg_alt": "#e5e7eb",
@@ -52,6 +57,8 @@ LIGHT: Dict[str, str] = {
     "card_border": "#e5e7eb",
     "header_from": "#6366f1",
     "header_to": "#8b5cf6",
+    "header_chip": "#4f46e5",
+    "header_chip_hover": "#4338ca",
     "text": "#111827",
     "text_muted": "#6b7280",
     "text_on_primary": "#ffffff",
@@ -90,6 +97,8 @@ DARK: Dict[str, str] = {
     "card_border": "#2a2f3d",
     "header_from": "#4f46e5",
     "header_to": "#7c3aed",
+    "header_chip": "#3730a3",
+    "header_chip_hover": "#312e81",
     "text": "#f3f4f6",
     "text_muted": "#9ca3af",
     "text_on_primary": "#ffffff",

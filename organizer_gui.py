@@ -26,6 +26,7 @@ from theme import (
     FONT,
     LIGHT,
     DARK,
+    HEADER_BAR_HEIGHT,
     RADIUS,
     SPACING,
     ThemeName,
@@ -182,14 +183,19 @@ class OrganizerApp(ctk.CTk):
             self,
             fg_color=self._pair("header_from"),
             corner_radius=0,
-            height=92,
+            height=HEADER_BAR_HEIGHT,
         )
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
         self._themed_register(header, fg_color="header_from")
 
         inner = ctk.CTkFrame(header, fg_color="transparent")
-        inner.pack(fill="both", expand=True, padx=SPACING["lg"], pady=SPACING["md"])
+        inner.pack(
+            fill="both",
+            expand=True,
+            padx=SPACING["md"],
+            pady=SPACING["xs"],
+        )
 
         left = ctk.CTkFrame(inner, fg_color="transparent")
         left.pack(side="left", fill="y")
@@ -198,19 +204,19 @@ class OrganizerApp(ctk.CTk):
             left,
             text="Organizador de Arquivos",
             text_color="#ffffff",
-            font=FONT["title"],
+            font=FONT["header_title"],
             anchor="w",
         )
-        title.pack(anchor="w")
+        title.pack(anchor="w", pady=(0, 0))
 
         subtitle = ctk.CTkLabel(
             left,
-            text="Ordene seus arquivos em segundos — moderno, rápido e seguro.",
-            text_color="#e0e7ff",
-            font=FONT["subtitle"],
+            text="Ordene em segundos — simples e seguro.",
+            text_color="#c7d2fe",
+            font=FONT["header_subtitle"],
             anchor="w",
         )
-        subtitle.pack(anchor="w")
+        subtitle.pack(anchor="w", pady=(0, 0))
 
         right = ctk.CTkFrame(inner, fg_color="transparent")
         right.pack(side="right", fill="y")
@@ -218,16 +224,20 @@ class OrganizerApp(ctk.CTk):
         self._theme_btn = ctk.CTkButton(
             right,
             text=self._theme_btn_text(),
-            width=54,
-            height=36,
-            corner_radius=RADIUS["pill"],
-            font=(FONT["button"][0], 16, "bold"),
-            fg_color=self._pair("accent"),
-            hover_color=self._pair("accent_hover"),
+            width=30,
+            height=30,
+            corner_radius=15,
+            font=(FONT["button"][0], 14),
+            fg_color=self._pair("header_chip"),
+            hover_color=self._pair("header_chip_hover"),
             text_color="#ffffff",
-            border_width=2,
-            border_color="#ffffff",
+            border_width=0,
             command=self._toggle_theme,
+        )
+        self._themed_register(
+            self._theme_btn,
+            fg_color="header_chip",
+            hover_color="header_chip_hover",
         )
         self._theme_btn.pack(side="right")
         _Tooltip(
