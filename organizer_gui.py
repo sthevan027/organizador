@@ -1,98 +1,115 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Interface gráfica moderna do Organizador de Arquivos (CustomTkinter)."""
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
-import threading
-import queue
-from pathlib import Path
+from __future__ import annotations
+
 import json
-from typing import List, Optional
+import queue
+import sys
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, messagebox
+from typing import Dict, List, Optional
 
-from organizer import organize, load_map, DEFAULT_MAP
+try:
+    import customtkinter as ctk
+except ImportError as exc:  # pragma: no cover - orientação ao usuário
+    raise SystemExit(
+        "customtkinter não está instalado.\n"
+        "Instale as dependências com: pip install -r requirements.txt"
+    ) from exc
+
+from organizer import DEFAULT_MAP, load_map, organize
+from theme import (
+    FONT,
+    LIGHT,
+    DARK,
+    RADIUS,
+    SPACING,
+    ThemeName,
+    load_theme,
+    palette,
+    save_theme,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+ICON_PATH = PROJECT_ROOT / "assets" / "organizer.ico"
+MAX_RECENT = 8
+
 
 # ---------------------------------------------------------------------------
-# Paleta de cores
+# Tooltip leve, compatível com widgets do CustomTkinter e Tk
 # ---------------------------------------------------------------------------
-_BG       = "#f4f4f4"
-_HEADER   = "#2c3e50"
-_GREEN    = "#27ae60"
-_BLUE     = "#3498db"
-_ORANGE   = "#e67e22"
-_RED      = "#e74c3c"
-_PURPLE   = "#9b59b6"
-_GRAY     = "#7f8c8d"
-
-_LOG_BG   = "#1e2a38"
-_LOG_FG   = "#ecf0f1"
-_LOG_OK   = "#2ecc71"
-_LOG_ERR  = "#e74c3c"
-_LOG_WARN = "#f39c12"
-_LOG_DRY  = "#74b9ff"
-_LOG_HEAD = "#ffffff"
-_LOG_INFO = "#95a5a6"
-
-MAX_RECENT = 6
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _btn(parent: tk.Widget, text: str, cmd, bg: str, **kw) -> tk.Button:
-    """Botão flat com cursor de mão."""
-    return tk.Button(parent, text=text, command=cmd,
-                     bg=bg, fg="white", relief="flat", cursor="hand2", **kw)
 
 
 class _Tooltip:
-    """Tooltip simples que aparece ao passar o mouse sobre um widget."""
-
-    def __init__(self, widget: tk.Widget, text: str):
+    def __init__(self, widget, text: str, palette_ref: dict):
         self._win: Optional[tk.Toplevel] = None
-        widget.bind("<Enter>", lambda _: self._show(widget, text))
-        widget.bind("<Leave>", lambda _: self._hide())
+        self._widget = widget
+        self._text = text
+        self._palette_ref = palette_ref
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
 
-    def _show(self, widget: tk.Widget, text: str):
-        x = widget.winfo_rootx() + 16
-        y = widget.winfo_rooty() + widget.winfo_height() + 4
-        self._win = tk.Toplevel(widget)
+    def _show(self, _event=None):
+        if self._win or not self._text:
+            return
+        x = self._widget.winfo_rootx() + 14
+        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 6
+        self._win = tk.Toplevel(self._widget)
         self._win.wm_overrideredirect(True)
         self._win.wm_geometry(f"+{x}+{y}")
-        tk.Label(self._win, text=text, background="#ffffcc",
-                 relief="solid", borderwidth=1,
-                 font=("Arial", 8), padx=5, pady=3).pack()
+        bg = self._palette_ref.get("bg", "#1f2430")
+        fg = self._palette_ref.get("text", "#f3f4f6")
+        frame = tk.Frame(self._win, bg=bg, bd=0, highlightthickness=1,
+                         highlightbackground=self._palette_ref.get("card_border", "#2a2f3d"))
+        frame.pack()
+        tk.Label(
+            frame,
+            text=self._text,
+            bg=bg,
+            fg=fg,
+            font=FONT["small"],
+            padx=8,
+            pady=4,
+            justify="left",
+        ).pack()
 
-    def _hide(self):
+    def _hide(self, _event=None):
         if self._win:
             self._win.destroy()
             self._win = None
 
 
-def _tip(widget: tk.Widget, text: str) -> None:
-    _Tooltip(widget, text)
-
-
 # ---------------------------------------------------------------------------
-# Classe principal
+# Aplicação principal
 # ---------------------------------------------------------------------------
 
-class OrganizerGUI:
-    def __init__(self, root: tk.Tk):
-        self.root = root
-        self.root.title("Organizador de Arquivos")
-        self.root.geometry("820x700")
-        self.root.configure(bg=_BG)
-        self.root.resizable(True, True)
-        self.root.minsize(680, 560)
 
-        self.source_path  = tk.StringVar()
-        self.dest_path    = tk.StringVar()
-        self.mode         = tk.StringVar(value="move")
-        self.dry_run      = tk.BooleanVar(value=True)
+class OrganizerApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.theme_name: ThemeName = load_theme("dark")
+        ctk.set_appearance_mode(self.theme_name)
+        ctk.set_default_color_theme("blue")
+
+        self.title("Organizador de Arquivos")
+        self.geometry("960x780")
+        self.minsize(860, 720)
+
+        self._apply_window_icon()
+
+        self.source_path = tk.StringVar()
+        self.dest_path = tk.StringVar()
+        self.mode = tk.StringVar(value="move")
+        self.dry_run = tk.BooleanVar(value=True)
         self.delete_empty = tk.BooleanVar(value=False)
         self.unknown_name = tk.StringVar(value="Outros")
-        self.config_path  = tk.StringVar()
+        self.config_path = tk.StringVar()
 
         self._recent_src: List[str] = []
         self._recent_dst: List[str] = []
@@ -101,230 +118,668 @@ class OrganizerGUI:
         self.is_organizing = False
         self._stop_event = threading.Event()
 
+        # Widgets sensíveis ao tema (registrados para repaint no toggle)
+        self._themed: List[tuple] = []
+        self._tooltips_palette: dict = dict(palette(self.theme_name))
+
+        self.configure(fg_color=self._c("bg"))
+
         self._build_ui()
         self._bind_shortcuts()
         self._poll_log_queue()
 
+    # ------------------------------------------------------------------ infra
+
+    def _c(self, key: str) -> str:
+        return palette(self.theme_name)[key]
+
+    def _pair(self, key: str) -> tuple[str, str]:
+        """Par (light, dark) para passar ao CustomTkinter."""
+        return (LIGHT[key], DARK[key])
+
+    def _themed_register(self, widget, **mapping) -> None:
+        """Registra um widget para ter cores atualizadas no toggle de tema.
+
+        `mapping` faz prop -> chave da paleta ("fg_color", "text_color", etc.).
+        """
+        self._themed.append((widget, mapping))
+
+    def _apply_window_icon(self) -> None:
+        if not ICON_PATH.exists():
+            return
+        try:
+            if sys.platform == "win32":
+                self.iconbitmap(str(ICON_PATH))
+            else:
+                png = ICON_PATH.with_suffix(".png")
+                if png.exists():
+                    self.iconphoto(True, tk.PhotoImage(file=str(png)))
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------ build
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         self._build_header()
-        main = tk.Frame(self.root, bg=_BG)
-        main.pack(fill="both", expand=True, padx=10, pady=6)
-        self._build_paths(main)
-        self._build_options(main)
-        self._build_buttons(main)
-        self._build_progress(main)
-        self._build_log(main)
 
-    def _build_header(self):
-        hdr = tk.Frame(self.root, bg=_HEADER, height=52)
-        hdr.pack(fill="x", padx=8, pady=(8, 0))
-        hdr.pack_propagate(False)
-        inner = tk.Frame(hdr, bg=_HEADER)
-        inner.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(inner, text="Organizador de Arquivos",
-                 font=("Arial", 15, "bold"), fg="white",
-                 bg=_HEADER).pack(side="left")
-        tk.Label(inner, text="  —  ordene seus arquivos em segundos",
-                 font=("Arial", 9), fg="#95a5a6",
-                 bg=_HEADER).pack(side="left", pady=(4, 0))
-
-    def _build_paths(self, parent: tk.Widget):
-        frm = tk.LabelFrame(parent, text=" Pastas ",
-                            font=("Arial", 10, "bold"), bg=_BG)
-        frm.pack(fill="x", pady=(0, 4))
-        frm.columnconfigure(1, weight=1)
-
-        def _path_row(row: int, label: str, var: tk.StringVar,
-                      recents: List[str], cmd, tip_text: str) -> ttk.Combobox:
-            tk.Label(frm, text=label, bg=_BG, width=12, anchor="w",
-                     font=("Arial", 9)).grid(row=row, column=0,
-                                             padx=(10, 4), pady=5, sticky="w")
-            combo = ttk.Combobox(frm, textvariable=var,
-                                 values=recents, font=("Arial", 9))
-            combo.grid(row=row, column=1, padx=4, pady=5, sticky="ew")
-            b = _btn(frm, "Procurar", cmd, _BLUE, padx=6, pady=2)
-            b.grid(row=row, column=2, padx=(4, 10), pady=5)
-            _tip(b, tip_text)
-            return combo
-
-        self._src_combo = _path_row(0, "Origem:", self.source_path,
-                                    self._recent_src, self._browse_source,
-                                    "Pasta a ser organizada")
-        self._dst_combo = _path_row(1, "Destino:", self.dest_path,
-                                    self._recent_dst, self._browse_dest,
-                                    "Onde os arquivos serão colocados")
-
-        tk.Label(frm, text="Config JSON:", bg=_BG, width=12, anchor="w",
-                 font=("Arial", 9)).grid(row=2, column=0,
-                                         padx=(10, 4), pady=5, sticky="w")
-        tk.Entry(frm, textvariable=self.config_path,
-                 font=("Arial", 9)).grid(row=2, column=1,
-                                          padx=4, pady=5, sticky="ew")
-        b_cfg = _btn(frm, "Procurar", self._browse_config, _ORANGE, padx=6, pady=2)
-        b_cfg.grid(row=2, column=2, padx=(4, 10), pady=5)
-        _tip(b_cfg, "Mapeamento personalizado de extensões (opcional)")
-
-    def _build_options(self, parent: tk.Widget):
-        frm = tk.LabelFrame(parent, text=" Opções ",
-                            font=("Arial", 10, "bold"), bg=_BG)
-        frm.pack(fill="x", pady=4)
-
-        # Modo de operação
-        mode_row = tk.Frame(frm, bg=_BG)
-        mode_row.pack(fill="x", padx=10, pady=(6, 2))
-        tk.Label(mode_row, text="Modo:", bg=_BG,
-                 font=("Arial", 9, "bold")).pack(side="left")
-
-        r_move = tk.Radiobutton(mode_row, text="Mover  (remove originais)",
-                                variable=self.mode, value="move",
-                                bg=_BG, font=("Arial", 9), cursor="hand2")
-        r_move.pack(side="left", padx=12)
-        _tip(r_move, "Move arquivos para o destino e remove os originais")
-
-        r_copy = tk.Radiobutton(mode_row, text="Copiar  (mantém originais)",
-                                variable=self.mode, value="copy",
-                                bg=_BG, font=("Arial", 9), cursor="hand2")
-        r_copy.pack(side="left")
-        _tip(r_copy, "Copia arquivos para o destino, mantendo os originais intactos")
-
-        # Checkboxes
-        chk_row = tk.Frame(frm, bg=_BG)
-        chk_row.pack(fill="x", padx=10, pady=2)
-
-        cb_dry = tk.Checkbutton(
-            chk_row,
-            text="Modo Teste  (simula sem modificar arquivos)",
-            variable=self.dry_run, bg=_BG, font=("Arial", 9),
-            cursor="hand2", fg="#c0392b", selectcolor=_BG,
+        main = ctk.CTkScrollableFrame(
+            self,
+            fg_color=self._pair("bg"),
+            corner_radius=0,
         )
-        cb_dry.pack(side="left", padx=(0, 20))
-        _tip(cb_dry, "Recomendado na primeira vez: mostra o que seria feito sem alterar nada")
+        main.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
 
-        cb_empty = tk.Checkbutton(
-            chk_row, text="Remover subpastas vazias",
-            variable=self.delete_empty, bg=_BG,
-            font=("Arial", 9), cursor="hand2", selectcolor=_BG,
+        self._build_paths_card(main)
+        self._build_options_card(main)
+        self._build_actions(main)
+        self._build_progress_card(main)
+        self._build_log_card(main)
+
+    # ---- header -----------------------------------------------------------
+
+    def _build_header(self) -> None:
+        header = ctk.CTkFrame(
+            self,
+            fg_color=self._pair("header_from"),
+            corner_radius=0,
+            height=92,
         )
-        cb_empty.pack(side="left")
-        _tip(cb_empty, "Remove subpastas que ficaram vazias após a organização")
+        header.pack(fill="x", side="top")
+        header.pack_propagate(False)
+        self._themed_register(header, fg_color="header_from")
+
+        inner = ctk.CTkFrame(header, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=SPACING["lg"], pady=SPACING["md"])
+
+        left = ctk.CTkFrame(inner, fg_color="transparent")
+        left.pack(side="left", fill="y")
+
+        title = ctk.CTkLabel(
+            left,
+            text="Organizador de Arquivos",
+            text_color="#ffffff",
+            font=FONT["title"],
+            anchor="w",
+        )
+        title.pack(anchor="w")
+
+        subtitle = ctk.CTkLabel(
+            left,
+            text="Ordene seus arquivos em segundos — moderno, rápido e seguro.",
+            text_color="#e0e7ff",
+            font=FONT["subtitle"],
+            anchor="w",
+        )
+        subtitle.pack(anchor="w")
+
+        right = ctk.CTkFrame(inner, fg_color="transparent")
+        right.pack(side="right", fill="y")
+
+        self._theme_btn = ctk.CTkButton(
+            right,
+            text=self._theme_btn_text(),
+            width=54,
+            height=36,
+            corner_radius=RADIUS["pill"],
+            font=(FONT["button"][0], 16, "bold"),
+            fg_color=self._pair("accent"),
+            hover_color=self._pair("accent_hover"),
+            text_color="#ffffff",
+            border_width=2,
+            border_color="#ffffff",
+            command=self._toggle_theme,
+        )
+        self._theme_btn.pack(side="right")
+        _Tooltip(
+            self._theme_btn,
+            "Alternar tema claro/escuro",
+            self._tooltips_palette,
+        )
+
+    def _theme_btn_text(self) -> str:
+        return "☀" if self.theme_name == "dark" else "🌙"
+
+    # ---- cards helpers ----------------------------------------------------
+
+    def _card(self, parent, title: str) -> ctk.CTkFrame:
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=self._pair("card"),
+            corner_radius=RADIUS["card"],
+            border_width=1,
+            border_color=self._pair("card_border"),
+        )
+        card.pack(fill="x", pady=(SPACING["md"], 0))
+        self._themed_register(card, fg_color="card", border_color="card_border")
+
+        header = ctk.CTkLabel(
+            card,
+            text=title,
+            font=FONT["section"],
+            text_color=self._pair("text"),
+            anchor="w",
+        )
+        header.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["md"], 0))
+        self._themed_register(header, text_color="text")
+        return card
+
+    def _separator(self, parent) -> None:
+        div = ctk.CTkFrame(parent, fg_color=self._pair("divider"), height=1)
+        div.pack(fill="x", padx=SPACING["lg"], pady=SPACING["sm"])
+        self._themed_register(div, fg_color="divider")
+
+    # ---- pastas -----------------------------------------------------------
+
+    def _build_paths_card(self, parent) -> None:
+        card = self._card(parent, "Pastas")
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["sm"], SPACING["lg"]))
+        body.columnconfigure(1, weight=1)
+
+        self._src_combo = self._add_path_row(
+            body, 0, "Origem",
+            self.source_path, self._recent_src,
+            self._browse_source,
+            "Pasta que será organizada",
+        )
+        self._dst_combo = self._add_path_row(
+            body, 1, "Destino",
+            self.dest_path, self._recent_dst,
+            self._browse_dest,
+            "Onde os arquivos serão colocados",
+        )
+
+        # Linha do JSON de configuração
+        label = ctk.CTkLabel(
+            body, text="Config JSON", font=FONT["label"],
+            text_color=self._pair("text_muted"), anchor="w", width=90,
+        )
+        label.grid(row=2, column=0, padx=(0, SPACING["sm"]), pady=SPACING["sm"], sticky="w")
+        self._themed_register(label, text_color="text_muted")
+
+        cfg_entry = ctk.CTkEntry(
+            body,
+            textvariable=self.config_path,
+            font=FONT["label"],
+            height=36,
+            corner_radius=RADIUS["input"],
+            fg_color=self._pair("input_bg"),
+            text_color=self._pair("text"),
+            border_color=self._pair("input_border"),
+            placeholder_text="Opcional — arquivo JSON de categorias personalizadas",
+        )
+        cfg_entry.grid(row=2, column=1, padx=SPACING["xs"], pady=SPACING["sm"], sticky="ew")
+        self._themed_register(cfg_entry, fg_color="input_bg", text_color="text", border_color="input_border")
+
+        cfg_btn = self._secondary_button(
+            body, "Procurar", self._browse_config, tip="Selecionar arquivo JSON de mapeamento",
+        )
+        cfg_btn.grid(row=2, column=2, padx=(SPACING["xs"], 0), pady=SPACING["sm"])
+
+    def _add_path_row(
+        self, parent, row: int, label_text: str,
+        var: tk.StringVar, recents: List[str], cmd, tip_text: str,
+    ) -> ctk.CTkComboBox:
+        label = ctk.CTkLabel(
+            parent,
+            text=label_text,
+            font=FONT["label"],
+            text_color=self._pair("text_muted"),
+            anchor="w",
+            width=90,
+        )
+        label.grid(row=row, column=0, padx=(0, SPACING["sm"]), pady=SPACING["sm"], sticky="w")
+        self._themed_register(label, text_color="text_muted")
+
+        combo = ctk.CTkComboBox(
+            parent,
+            variable=var,
+            values=recents,
+            font=FONT["label"],
+            height=36,
+            corner_radius=RADIUS["input"],
+            fg_color=self._pair("input_bg"),
+            text_color=self._pair("text"),
+            border_color=self._pair("input_border"),
+            button_color=self._pair("primary"),
+            button_hover_color=self._pair("primary_hover"),
+            dropdown_fg_color=self._pair("card"),
+            dropdown_text_color=self._pair("text"),
+            dropdown_hover_color=self._pair("bg_alt"),
+        )
+        combo.grid(row=row, column=1, padx=SPACING["xs"], pady=SPACING["sm"], sticky="ew")
+        self._themed_register(
+            combo,
+            fg_color="input_bg", text_color="text", border_color="input_border",
+            button_color="primary", button_hover_color="primary_hover",
+            dropdown_fg_color="card", dropdown_text_color="text",
+            dropdown_hover_color="bg_alt",
+        )
+
+        btn = self._primary_button(parent, "Procurar", cmd, tip=tip_text, width=110)
+        btn.grid(row=row, column=2, padx=(SPACING["xs"], 0), pady=SPACING["sm"])
+        return combo
+
+    # ---- opções -----------------------------------------------------------
+
+    def _build_options_card(self, parent) -> None:
+        card = self._card(parent, "Opções")
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["sm"], SPACING["lg"]))
+
+        # Modo (segmented control)
+        mode_row = ctk.CTkFrame(body, fg_color="transparent")
+        mode_row.pack(fill="x", pady=(0, SPACING["md"]))
+
+        mode_label = ctk.CTkLabel(
+            mode_row, text="Modo", font=FONT["label"],
+            text_color=self._pair("text_muted"), anchor="w", width=90,
+        )
+        mode_label.pack(side="left")
+        self._themed_register(mode_label, text_color="text_muted")
+
+        seg = ctk.CTkSegmentedButton(
+            mode_row,
+            values=["Mover", "Copiar"],
+            height=34,
+            corner_radius=RADIUS["button"],
+            font=FONT["label"],
+            fg_color=self._pair("bg_alt"),
+            selected_color=self._pair("primary"),
+            selected_hover_color=self._pair("primary_hover"),
+            unselected_color=self._pair("bg_alt"),
+            unselected_hover_color=self._pair("divider"),
+            text_color=self._pair("text"),
+            command=self._on_mode_change,
+        )
+        seg.set("Mover")
+        seg.pack(side="left", padx=SPACING["sm"])
+        self._themed_register(
+            seg,
+            fg_color="bg_alt",
+            selected_color="primary",
+            selected_hover_color="primary_hover",
+            unselected_color="bg_alt",
+            unselected_hover_color="divider",
+            text_color="text",
+        )
+        self._mode_segment = seg
+
+        mode_tip = ctk.CTkLabel(
+            mode_row,
+            text="'Mover' remove os originais; 'Copiar' mantém tudo intacto.",
+            font=FONT["small"],
+            text_color=self._pair("text_muted"),
+        )
+        mode_tip.pack(side="left", padx=SPACING["md"])
+        self._themed_register(mode_tip, text_color="text_muted")
+
+        # Toggles (switches)
+        toggles = ctk.CTkFrame(body, fg_color="transparent")
+        toggles.pack(fill="x", pady=(0, SPACING["md"]))
+
+        dry_sw = ctk.CTkSwitch(
+            toggles,
+            text="Modo Teste — simula sem modificar nada",
+            variable=self.dry_run,
+            font=FONT["label"],
+            text_color=self._pair("text"),
+            progress_color=self._pair("warning"),
+            button_color="#ffffff",
+            button_hover_color="#f3f4f6",
+        )
+        dry_sw.pack(anchor="w", pady=SPACING["xs"])
+        self._themed_register(dry_sw, text_color="text", progress_color="warning")
+
+        empty_sw = ctk.CTkSwitch(
+            toggles,
+            text="Remover subpastas vazias após organizar",
+            variable=self.delete_empty,
+            font=FONT["label"],
+            text_color=self._pair("text"),
+            progress_color=self._pair("primary"),
+            button_color="#ffffff",
+            button_hover_color="#f3f4f6",
+        )
+        empty_sw.pack(anchor="w", pady=SPACING["xs"])
+        self._themed_register(empty_sw, text_color="text", progress_color="primary")
 
         # Pasta para desconhecidos
-        unk_row = tk.Frame(frm, bg=_BG)
-        unk_row.pack(fill="x", padx=10, pady=(2, 8))
-        tk.Label(unk_row, text="Pasta para tipos não reconhecidos:",
-                 bg=_BG, font=("Arial", 9)).pack(side="left")
-        unk_ent = tk.Entry(unk_row, textvariable=self.unknown_name,
-                           width=14, font=("Arial", 9))
-        unk_ent.pack(side="left", padx=6)
-        _tip(unk_ent, "Arquivos com extensão desconhecida irão para esta pasta")
+        unk_row = ctk.CTkFrame(body, fg_color="transparent")
+        unk_row.pack(fill="x")
 
-    def _build_buttons(self, parent: tk.Widget):
-        row = tk.Frame(parent, bg=_BG)
-        row.pack(fill="x", pady=4)
-
-        self.organize_btn = _btn(row, "▶  ORGANIZAR", self._start_organize, _GREEN,
-                                 font=("Arial", 11, "bold"), padx=16, pady=5)
-        self.organize_btn.pack(side="left", padx=(0, 4))
-        _tip(self.organize_btn, "Iniciar organização  [F5]")
-
-        self.cancel_btn = _btn(row, "Cancelar", self._cancel, _RED,
-                               state="disabled", padx=10, pady=5)
-        self.cancel_btn.pack(side="left", padx=4)
-        _tip(self.cancel_btn, "Cancelar operação em curso  [Esc]")
-
-        tk.Frame(row, bg="#cccccc", width=1, height=30).pack(side="left", padx=10)
-
-        b_clear = _btn(row, "Limpar log", self._clear_log, _GRAY, padx=8, pady=5)
-        b_clear.pack(side="left", padx=2)
-        _tip(b_clear, "Limpar conteúdo do log  [Ctrl+L]")
-
-        b_save = _btn(row, "Salvar log", self._save_log, _BLUE, padx=8, pady=5)
-        b_save.pack(side="left", padx=2)
-        _tip(b_save, "Salvar log em arquivo  [Ctrl+S]")
-
-        b_cfg = _btn(row, "Ver config padrão", self._show_default_config,
-                     _PURPLE, padx=8, pady=5)
-        b_cfg.pack(side="left", padx=2)
-        _tip(b_cfg, "Exibe o mapeamento padrão de extensões por categoria")
-
-    def _build_progress(self, parent: tk.Widget):
-        frm = tk.LabelFrame(parent, text=" Progresso ",
-                            font=("Arial", 10, "bold"), bg=_BG)
-        frm.pack(fill="x", pady=4)
-
-        self.progress_var = tk.DoubleVar()
-        style = ttk.Style()
-        style.configure("Green.Horizontal.TProgressbar",
-                        troughcolor="#d5d8dc", background=_GREEN, thickness=14)
-        ttk.Progressbar(frm, variable=self.progress_var, maximum=100,
-                        style="Green.Horizontal.TProgressbar").pack(
-            fill="x", padx=10, pady=(6, 2))
-
-        self.status_label = tk.Label(frm, text="Pronto.", bg=_BG,
-                                     font=("Arial", 9), fg="#555555")
-        self.status_label.pack(pady=(0, 4))
-
-        # Contadores de resultado
-        stats_row = tk.Frame(frm, bg=_BG)
-        stats_row.pack(fill="x", padx=10, pady=(0, 6))
-        self._stat_labels: dict = {}
-        for key, label, color in [
-            ("total",   "Total: —",       _BLUE),
-            ("moved",   "Organizados: —", _GREEN),
-            ("skipped", "Pulados: —",     _ORANGE),
-            ("errors",  "Erros: —",       _RED),
-        ]:
-            lbl = tk.Label(stats_row, text=label, bg=_BG,
-                           font=("Arial", 9, "bold"), fg=color)
-            lbl.pack(side="left", padx=(0, 18))
-            self._stat_labels[key] = lbl
-
-    def _build_log(self, parent: tk.Widget):
-        frm = tk.LabelFrame(parent, text=" Log de Operações ",
-                            font=("Arial", 10, "bold"), bg=_BG)
-        frm.pack(fill="both", expand=True, pady=(4, 0))
-
-        self.log_text = scrolledtext.ScrolledText(
-            frm, height=10, font=("Consolas", 9),
-            bg=_LOG_BG, fg=_LOG_FG, wrap="none",
-            insertbackground="white", selectbackground=_BLUE,
+        unk_label = ctk.CTkLabel(
+            unk_row,
+            text="Pasta para tipos não reconhecidos",
+            font=FONT["label"],
+            text_color=self._pair("text_muted"),
         )
-        self.log_text.pack(fill="both", expand=True, padx=6, pady=6)
+        unk_label.pack(side="left")
+        self._themed_register(unk_label, text_color="text_muted")
 
-        for tag, color, bold in [
-            ("ok",      _LOG_OK,   False),
-            ("error",   _LOG_ERR,  False),
-            ("warning", _LOG_WARN, False),
-            ("dryrun",  _LOG_DRY,  False),
-            ("header",  _LOG_HEAD, True),
-            ("info",    _LOG_INFO, False),
-        ]:
-            kw: dict = {"foreground": color}
+        unk_entry = ctk.CTkEntry(
+            unk_row,
+            textvariable=self.unknown_name,
+            width=180,
+            height=32,
+            corner_radius=RADIUS["input"],
+            font=FONT["label"],
+            fg_color=self._pair("input_bg"),
+            text_color=self._pair("text"),
+            border_color=self._pair("input_border"),
+        )
+        unk_entry.pack(side="left", padx=SPACING["sm"])
+        self._themed_register(unk_entry, fg_color="input_bg", text_color="text", border_color="input_border")
+
+    def _on_mode_change(self, value: str) -> None:
+        self.mode.set("copy" if value == "Copiar" else "move")
+
+    # ---- botões de ação ---------------------------------------------------
+
+    def _build_actions(self, parent) -> None:
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=SPACING["md"])
+
+        self.organize_btn = ctk.CTkButton(
+            row,
+            text="▶  ORGANIZAR",
+            command=self._start_organize,
+            font=FONT["button_hero"],
+            height=48,
+            corner_radius=RADIUS["button"],
+            fg_color=self._pair("success"),
+            hover_color=self._pair("success_hover"),
+            text_color="#ffffff",
+        )
+        self.organize_btn.pack(side="left", padx=(0, SPACING["sm"]), fill="x", expand=True)
+        self._themed_register(self.organize_btn, fg_color="success", hover_color="success_hover")
+        _Tooltip(self.organize_btn, "Iniciar organização  [F5]", self._tooltips_palette)
+
+        self.cancel_btn = ctk.CTkButton(
+            row,
+            text="✕  Cancelar",
+            command=self._cancel,
+            font=FONT["button"],
+            height=48,
+            width=130,
+            corner_radius=RADIUS["button"],
+            fg_color=self._pair("danger"),
+            hover_color=self._pair("danger_hover"),
+            text_color="#ffffff",
+            state="disabled",
+        )
+        self.cancel_btn.pack(side="left", padx=SPACING["xs"])
+        self._themed_register(self.cancel_btn, fg_color="danger", hover_color="danger_hover")
+        _Tooltip(self.cancel_btn, "Cancelar operação em curso  [Esc]", self._tooltips_palette)
+
+        secondary_row = ctk.CTkFrame(parent, fg_color="transparent")
+        secondary_row.pack(fill="x", pady=(0, SPACING["xs"]))
+
+        clear_btn = self._neutral_button(
+            secondary_row, "Limpar log", self._clear_log,
+            tip="Limpar conteúdo do log  [Ctrl+L]", width=130,
+        )
+        clear_btn.pack(side="left", padx=(0, SPACING["xs"]))
+
+        save_btn = self._secondary_button(
+            secondary_row, "Salvar log", self._save_log,
+            tip="Salvar log em arquivo  [Ctrl+S]", width=130,
+        )
+        save_btn.pack(side="left", padx=SPACING["xs"])
+
+        cfg_btn = self._accent_button(
+            secondary_row, "Ver config padrão", self._show_default_config,
+            tip="Exibe o mapeamento padrão de extensões", width=170,
+        )
+        cfg_btn.pack(side="left", padx=SPACING["xs"])
+
+    # ---- botões helpers ---------------------------------------------------
+
+    def _primary_button(self, parent, text, cmd, *, tip="", width=110):
+        btn = ctk.CTkButton(
+            parent, text=text, command=cmd,
+            font=FONT["button"], height=36, width=width,
+            corner_radius=RADIUS["button"],
+            fg_color=self._pair("primary"),
+            hover_color=self._pair("primary_hover"),
+            text_color="#ffffff",
+        )
+        self._themed_register(btn, fg_color="primary", hover_color="primary_hover")
+        if tip:
+            _Tooltip(btn, tip, self._tooltips_palette)
+        return btn
+
+    def _secondary_button(self, parent, text, cmd, *, tip="", width=110):
+        btn = ctk.CTkButton(
+            parent, text=text, command=cmd,
+            font=FONT["button"], height=36, width=width,
+            corner_radius=RADIUS["button"],
+            fg_color=self._pair("warning"),
+            hover_color=self._pair("warning_hover"),
+            text_color="#ffffff",
+        )
+        self._themed_register(btn, fg_color="warning", hover_color="warning_hover")
+        if tip:
+            _Tooltip(btn, tip, self._tooltips_palette)
+        return btn
+
+    def _neutral_button(self, parent, text, cmd, *, tip="", width=110):
+        btn = ctk.CTkButton(
+            parent, text=text, command=cmd,
+            font=FONT["button"], height=36, width=width,
+            corner_radius=RADIUS["button"],
+            fg_color=self._pair("neutral"),
+            hover_color=self._pair("neutral_hover"),
+            text_color="#ffffff",
+        )
+        self._themed_register(btn, fg_color="neutral", hover_color="neutral_hover")
+        if tip:
+            _Tooltip(btn, tip, self._tooltips_palette)
+        return btn
+
+    def _accent_button(self, parent, text, cmd, *, tip="", width=130):
+        btn = ctk.CTkButton(
+            parent, text=text, command=cmd,
+            font=FONT["button"], height=36, width=width,
+            corner_radius=RADIUS["button"],
+            fg_color=self._pair("accent"),
+            hover_color=self._pair("accent_hover"),
+            text_color="#ffffff",
+        )
+        self._themed_register(btn, fg_color="accent", hover_color="accent_hover")
+        if tip:
+            _Tooltip(btn, tip, self._tooltips_palette)
+        return btn
+
+    # ---- progresso + stat cards ------------------------------------------
+
+    def _build_progress_card(self, parent) -> None:
+        card = self._card(parent, "Progresso")
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["sm"], SPACING["lg"]))
+
+        top = ctk.CTkFrame(body, fg_color="transparent")
+        top.pack(fill="x")
+
+        self.status_label = ctk.CTkLabel(
+            top, text="Pronto.", font=FONT["label"],
+            text_color=self._pair("text_muted"), anchor="w",
+        )
+        self.status_label.pack(side="left")
+        self._themed_register(self.status_label, text_color="text_muted")
+
+        self.pct_label = ctk.CTkLabel(
+            top, text="0%", font=FONT["section"],
+            text_color=self._pair("primary"),
+        )
+        self.pct_label.pack(side="right")
+        self._themed_register(self.pct_label, text_color="primary")
+
+        self.progress_var = tk.DoubleVar(value=0.0)
+        self.progress_bar = ctk.CTkProgressBar(
+            body,
+            variable=self.progress_var,
+            height=10,
+            corner_radius=RADIUS["pill"],
+            fg_color=self._pair("progress_trough"),
+            progress_color=self._pair("progress_fill"),
+        )
+        self.progress_bar.set(0.0)
+        self.progress_bar.pack(fill="x", pady=(SPACING["sm"], SPACING["md"]))
+        self._themed_register(self.progress_bar, fg_color="progress_trough", progress_color="progress_fill")
+
+        stats = ctk.CTkFrame(body, fg_color="transparent")
+        stats.pack(fill="x")
+        for i in range(4):
+            stats.columnconfigure(i, weight=1, uniform="stat")
+
+        self._stat_cards: Dict[str, Dict[str, ctk.CTkLabel]] = {}
+        specs = [
+            ("total",    "Total",        "primary"),
+            ("moved",    "Organizados",  "success"),
+            ("skipped",  "Pulados",      "warning"),
+            ("errors",   "Erros",        "danger"),
+        ]
+        for col, (key, label_text, color_key) in enumerate(specs):
+            mini = ctk.CTkFrame(
+                stats,
+                fg_color=self._pair("bg_alt"),
+                corner_radius=RADIUS["button"],
+                border_width=1,
+                border_color=self._pair("card_border"),
+            )
+            mini.grid(row=0, column=col, padx=SPACING["xs"], sticky="ew")
+            self._themed_register(mini, fg_color="bg_alt", border_color="card_border")
+
+            value_lbl = ctk.CTkLabel(
+                mini, text="—", font=FONT["stat_value"],
+                text_color=self._pair(color_key),
+            )
+            value_lbl.pack(pady=(SPACING["sm"], 0))
+            self._themed_register(value_lbl, text_color=color_key)
+
+            text_lbl = ctk.CTkLabel(
+                mini, text=label_text, font=FONT["stat_label"],
+                text_color=self._pair("text_muted"),
+            )
+            text_lbl.pack(pady=(0, SPACING["sm"]))
+            self._themed_register(text_lbl, text_color="text_muted")
+
+            self._stat_cards[key] = {"value": value_lbl, "label": text_lbl}
+
+    # ---- log --------------------------------------------------------------
+
+    def _build_log_card(self, parent) -> None:
+        card = self._card(parent, "Log de Operações")
+
+        body = ctk.CTkFrame(
+            card,
+            fg_color=self._pair("log_bg"),
+            corner_radius=RADIUS["input"],
+        )
+        body.pack(fill="both", expand=True,
+                  padx=SPACING["lg"], pady=(SPACING["sm"], SPACING["lg"]))
+        self._themed_register(body, fg_color="log_bg")
+
+        self.log_text = ctk.CTkTextbox(
+            body,
+            height=220,
+            font=FONT["log"],
+            fg_color=self._pair("log_bg"),
+            text_color=self._pair("log_fg"),
+            corner_radius=RADIUS["input"],
+            wrap="none",
+        )
+        self.log_text.pack(fill="both", expand=True, padx=SPACING["sm"], pady=SPACING["sm"])
+        self._themed_register(self.log_text, fg_color="log_bg", text_color="log_fg")
+        self._configure_log_tags()
+
+    def _configure_log_tags(self) -> None:
+        txt = self.log_text
+        # CTkTextbox delega tags para o tk.Text interno
+        inner = txt._textbox  # type: ignore[attr-defined]
+        tags = [
+            ("ok",       self._c("log_ok"),      False),
+            ("error",    self._c("log_error"),   True),
+            ("warning",  self._c("log_warning"), False),
+            ("dryrun",   self._c("log_dryrun"),  False),
+            ("header",   self._c("log_header"),  True),
+            ("info",     self._c("log_info"),    False),
+        ]
+        for tag, color, bold in tags:
+            cfg: dict = {"foreground": color}
             if bold:
-                kw["font"] = ("Consolas", 9, "bold")
-            self.log_text.tag_configure(tag, **kw)
+                cfg["font"] = (FONT["log"][0], FONT["log"][1], "bold")
+            inner.tag_configure(tag, **cfg)
 
-    # ------------------------------------------------------------------ atalhos e helpers
+    # ------------------------------------------------------------------ atalhos
 
-    def _bind_shortcuts(self):
-        self.root.bind("<F5>",        lambda _: self._start_organize())
-        self.root.bind("<Escape>",    lambda _: self._cancel())
-        self.root.bind("<Control-l>", lambda _: self._clear_log())
-        self.root.bind("<Control-s>", lambda _: self._save_log())
+    def _bind_shortcuts(self) -> None:
+        self.bind("<F5>", lambda _e: self._start_organize())
+        self.bind("<Escape>", lambda _e: self._cancel())
+        self.bind("<Control-l>", lambda _e: self._clear_log())
+        self.bind("<Control-L>", lambda _e: self._clear_log())
+        self.bind("<Control-s>", lambda _e: self._save_log())
+        self.bind("<Control-S>", lambda _e: self._save_log())
 
-    def _push_recent(self, path: str, lst: List[str], combo: ttk.Combobox):
-        if path in lst:
-            lst.remove(path)
-        lst.insert(0, path)
-        del lst[MAX_RECENT:]
-        combo["values"] = lst
+    # ------------------------------------------------------------------ tema
 
-    def _log(self, message: str):
+    def _toggle_theme(self) -> None:
+        self.theme_name = "light" if self.theme_name == "dark" else "dark"
+        save_theme(self.theme_name)
+        ctk.set_appearance_mode(self.theme_name)
+        self._repaint_all()
+
+    def _repaint_all(self) -> None:
+        # Atualiza paleta das tooltips
+        self._tooltips_palette.clear()
+        self._tooltips_palette.update(palette(self.theme_name))
+
+        self.configure(fg_color=self._c("bg"))
+        self._theme_btn.configure(text=self._theme_btn_text())
+
+        for widget, mapping in self._themed:
+            try:
+                kwargs = {prop: self._c(key) for prop, key in mapping.items()}
+                widget.configure(**kwargs)
+            except Exception:
+                continue
+
+        self._configure_log_tags()
+
+    # ------------------------------------------------------------------ log queue
+
+    def _poll_log_queue(self) -> None:
+        try:
+            while True:
+                item = self.log_queue.get_nowait()
+                if (
+                    isinstance(item, tuple)
+                    and len(item) == 3
+                    and item[0] == "_progress"
+                ):
+                    _, current, total = item
+                    pct = (current / total) if total else 1.0
+                    self.progress_var.set(pct)
+                    self.progress_bar.set(pct)
+                    self.pct_label.configure(text=f"{int(pct * 100)}%")
+                    self.status_label.configure(
+                        text=f"Processando {current} de {total}…"
+                    )
+                else:
+                    self._log(str(item))
+        except queue.Empty:
+            pass
+        self.after(100, self._poll_log_queue)
+
+    def _log(self, message: str) -> None:
         tag = self._tag_for(message)
-        self.log_text.insert(tk.END, message + "\n", tag)
-        self.log_text.see(tk.END)
+        inner = self.log_text._textbox  # type: ignore[attr-defined]
+        inner.insert("end", message + "\n", tag)
+        inner.see("end")
 
     def _tag_for(self, line: str) -> str:
         if line.startswith("[OK]") or "✅" in line:
@@ -341,24 +796,18 @@ class OrganizerGUI:
             return "info"
         return ""
 
-    def _poll_log_queue(self):
-        try:
-            while True:
-                item = self.log_queue.get_nowait()
-                if isinstance(item, tuple) and len(item) == 3 and item[0] == "_progress":
-                    _, current, total = item
-                    pct = (current / total * 100) if total else 100
-                    self.progress_var.set(pct)
-                    self.status_label.config(text=f"Processando {current} de {total}...")
-                else:
-                    self._log(str(item))
-        except queue.Empty:
-            pass
-        self.root.after(100, self._poll_log_queue)
+    # ------------------------------------------------------------------ recentes
 
-    # ------------------------------------------------------------------ ações
+    def _push_recent(self, path: str, lst: List[str], combo: ctk.CTkComboBox) -> None:
+        if path in lst:
+            lst.remove(path)
+        lst.insert(0, path)
+        del lst[MAX_RECENT:]
+        combo.configure(values=lst)
 
-    def _browse_source(self):
+    # ------------------------------------------------------------------ browse
+
+    def _browse_source(self) -> None:
         folder = filedialog.askdirectory(title="Selecionar pasta de origem")
         if folder:
             self.source_path.set(folder)
@@ -367,13 +816,13 @@ class OrganizerGUI:
                 self.dest_path.set(folder)
                 self._push_recent(folder, self._recent_dst, self._dst_combo)
 
-    def _browse_dest(self):
+    def _browse_dest(self) -> None:
         folder = filedialog.askdirectory(title="Selecionar pasta de destino")
         if folder:
             self.dest_path.set(folder)
             self._push_recent(folder, self._recent_dst, self._dst_combo)
 
-    def _browse_config(self):
+    def _browse_config(self) -> None:
         path = filedialog.askopenfilename(
             title="Selecionar arquivo de configuração JSON",
             filetypes=[("JSON", "*.json"), ("Todos", "*.*")],
@@ -381,16 +830,21 @@ class OrganizerGUI:
         if path:
             self.config_path.set(path)
 
-    def _clear_log(self):
-        self.log_text.delete("1.0", tk.END)
+    # ------------------------------------------------------------------ log ops
 
-    def _save_log(self):
-        content = self.log_text.get("1.0", tk.END)
+    def _clear_log(self) -> None:
+        inner = self.log_text._textbox  # type: ignore[attr-defined]
+        inner.delete("1.0", "end")
+
+    def _save_log(self) -> None:
+        inner = self.log_text._textbox  # type: ignore[attr-defined]
+        content = inner.get("1.0", "end")
         if not content.strip():
             messagebox.showwarning("Aviso", "O log está vazio!")
             return
         path = filedialog.asksaveasfilename(
-            title="Salvar log", defaultextension=".txt",
+            title="Salvar log",
+            defaultextension=".txt",
             filetypes=[("Texto", "*.txt"), ("Todos", "*.*")],
         )
         if path:
@@ -400,24 +854,63 @@ class OrganizerGUI:
             except Exception as e:
                 messagebox.showerror("Erro", f"Não foi possível salvar:\n{e}")
 
-    def _show_default_config(self):
-        win = tk.Toplevel(self.root)
+    def _show_default_config(self) -> None:
+        win = ctk.CTkToplevel(self)
         win.title("Configuração padrão de extensões")
-        win.geometry("640x460")
-        win.configure(bg=_BG)
-        config_json = json.dumps(DEFAULT_MAP, indent=2, ensure_ascii=False)
-        txt = scrolledtext.ScrolledText(win, font=("Consolas", 10),
-                                        bg=_LOG_BG, fg=_LOG_FG)
-        txt.pack(fill="both", expand=True, padx=10, pady=10)
-        txt.insert("1.0", config_json)
-        txt.config(state="disabled")
-        _btn(win, "Salvar como...",
-             lambda: self._save_config_file(config_json),
-             _GREEN, padx=10, pady=4).pack(pady=(0, 10))
+        win.geometry("720x520")
+        win.configure(fg_color=self._c("bg"))
+        try:
+            if sys.platform == "win32" and ICON_PATH.exists():
+                win.after(200, lambda: win.iconbitmap(str(ICON_PATH)))
+        except Exception:
+            pass
 
-    def _save_config_file(self, config_json: str):
+        header = ctk.CTkLabel(
+            win, text="Configuração padrão de extensões",
+            font=FONT["title"], text_color=self._c("text"),
+        )
+        header.pack(pady=(SPACING["md"], SPACING["sm"]))
+
+        config_json = json.dumps(DEFAULT_MAP, indent=2, ensure_ascii=False)
+        txt = ctk.CTkTextbox(
+            win,
+            font=FONT["log"],
+            fg_color=self._c("log_bg"),
+            text_color=self._c("log_fg"),
+            corner_radius=RADIUS["input"],
+        )
+        txt.pack(fill="both", expand=True,
+                 padx=SPACING["lg"], pady=SPACING["sm"])
+        txt.insert("1.0", config_json)
+        txt.configure(state="disabled")
+
+        footer = ctk.CTkFrame(win, fg_color="transparent")
+        footer.pack(fill="x", padx=SPACING["lg"], pady=SPACING["md"])
+
+        save_btn = ctk.CTkButton(
+            footer,
+            text="Salvar como…",
+            command=lambda: self._save_config_file(config_json),
+            font=FONT["button"], height=40,
+            corner_radius=RADIUS["button"],
+            fg_color=self._c("success"), hover_color=self._c("success_hover"),
+            text_color="#ffffff",
+        )
+        save_btn.pack(side="right")
+
+        close_btn = ctk.CTkButton(
+            footer, text="Fechar", command=win.destroy,
+            font=FONT["button"], height=40, width=120,
+            corner_radius=RADIUS["button"],
+            fg_color=self._c("neutral"), hover_color=self._c("neutral_hover"),
+            text_color="#ffffff",
+        )
+        close_btn.pack(side="right", padx=SPACING["xs"])
+
+    def _save_config_file(self, config_json: str) -> None:
         path = filedialog.asksaveasfilename(
-            title="Salvar configuração", defaultextension=".json",
+            title="Salvar configuração",
+            defaultextension=".json",
             filetypes=[("JSON", "*.json"), ("Todos", "*.*")],
         )
         if path:
@@ -427,31 +920,35 @@ class OrganizerGUI:
             except Exception as e:
                 messagebox.showerror("Erro", f"Não foi possível salvar:\n{e}")
 
-    def _cancel(self):
+    # ------------------------------------------------------------------ organizar
+
+    def _cancel(self) -> None:
         if self.is_organizing:
             self._stop_event.set()
             self.log_queue.put("⚠️  Operação cancelada pelo usuário.")
             self._set_ui_state(organizing=False)
 
-    def _set_ui_state(self, organizing: bool):
+    def _set_ui_state(self, *, organizing: bool) -> None:
         self.is_organizing = organizing
         if organizing:
-            self.organize_btn.config(state="disabled", text="Organizando...")
-            self.cancel_btn.config(state="normal")
+            self.organize_btn.configure(state="disabled", text="Organizando…")
+            self.cancel_btn.configure(state="normal")
             self.progress_var.set(0)
-            self.status_label.config(text="Iniciando...")
+            self.progress_bar.set(0)
+            self.pct_label.configure(text="0%")
+            self.status_label.configure(text="Iniciando…")
         else:
-            self.organize_btn.config(state="normal", text="▶  ORGANIZAR")
-            self.cancel_btn.config(state="disabled")
-            self.status_label.config(text="Pronto.")
+            self.organize_btn.configure(state="normal", text="▶  ORGANIZAR")
+            self.cancel_btn.configure(state="disabled")
+            self.status_label.configure(text="Pronto.")
 
-    def _update_stats(self, total: int, moved: int, skipped: int, errors: int):
-        self._stat_labels["total"].config(text=f"Total: {total}")
-        self._stat_labels["moved"].config(text=f"Organizados: {moved}")
-        self._stat_labels["skipped"].config(text=f"Pulados: {skipped}")
-        self._stat_labels["errors"].config(text=f"Erros: {errors}")
+    def _update_stats(self, total: int, moved: int, skipped: int, errors: int) -> None:
+        self._stat_cards["total"]["value"].configure(text=str(total))
+        self._stat_cards["moved"]["value"].configure(text=str(moved))
+        self._stat_cards["skipped"]["value"].configure(text=str(skipped))
+        self._stat_cards["errors"]["value"].configure(text=str(errors))
 
-    def _start_organize(self):
+    def _start_organize(self) -> None:
         if self.is_organizing:
             return
         if not self.source_path.get():
@@ -464,11 +961,11 @@ class OrganizerGUI:
         self._set_ui_state(organizing=True)
         threading.Thread(target=self._organize_worker, daemon=True).start()
 
-    def _organize_worker(self):
+    def _organize_worker(self) -> None:
         try:
-            source  = Path(self.source_path.get())
-            dest    = Path(self.dest_path.get())
-            cfgp    = Path(self.config_path.get()) if self.config_path.get() else None
+            source = Path(self.source_path.get())
+            dest = Path(self.dest_path.get())
+            cfgp = Path(self.config_path.get()) if self.config_path.get() else None
             ext_map = load_map(cfgp)
 
             sep = "=" * 55
@@ -476,12 +973,14 @@ class OrganizerGUI:
             self.log_queue.put("Iniciando organização...")
             self.log_queue.put(f"Origem:  {source}")
             self.log_queue.put(f"Destino: {dest}")
-            self.log_queue.put(f"Modo:    {'Mover' if self.mode.get() == 'move' else 'Copiar'}")
+            self.log_queue.put(
+                f"Modo:    {'Mover' if self.mode.get() == 'move' else 'Copiar'}"
+            )
             if self.dry_run.get():
                 self.log_queue.put("*** MODO TESTE — nenhum arquivo será alterado ***")
             self.log_queue.put(sep)
 
-            def progress_cb(current: int, total: int):
+            def progress_cb(current: int, total: int) -> None:
                 self.log_queue.put(("_progress", current, total))
 
             report, moved, skipped, errors = organize(
@@ -500,8 +999,9 @@ class OrganizerGUI:
                     self.log_queue.put(line)
 
             total_count = moved + skipped + errors
-            self.root.after(0, lambda: self._update_stats(
-                total_count, moved, skipped, errors))
+            self.after(
+                0, lambda: self._update_stats(total_count, moved, skipped, errors)
+            )
 
             if errors > 0:
                 self.log_queue.put(f"⚠️  Concluído com {errors} erro(s).")
@@ -513,17 +1013,19 @@ class OrganizerGUI:
         except Exception as e:
             self.log_queue.put(f"❌  Erro: {e}")
         finally:
-            self.root.after(0, lambda: self.progress_var.set(100))
-            self.root.after(0, lambda: self._set_ui_state(organizing=False))
+            self.after(0, lambda: (self.progress_var.set(1.0),
+                                   self.progress_bar.set(1.0),
+                                   self.pct_label.configure(text="100%")))
+            self.after(0, lambda: self._set_ui_state(organizing=False))
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
-def main():
-    root = tk.Tk()
-    app = OrganizerGUI(root)
+
+def main() -> None:
+    app = OrganizerApp()
 
     downloads = Path.home() / "Downloads"
     if downloads.is_dir():
@@ -533,7 +1035,7 @@ def main():
         app._push_recent(src, app._recent_src, app._src_combo)
         app._push_recent(src, app._recent_dst, app._dst_combo)
 
-    root.mainloop()
+    app.mainloop()
 
 
 if __name__ == "__main__":
