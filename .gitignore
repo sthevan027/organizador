@@ -22,3 +22,22 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# 
+build/
+dist/
+*.exe
+*.app
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.tar
+*.zip
+
+# Test files
+test_files/
+
+organizer.log
+organizer.spec
+logs/

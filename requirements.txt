@@ -1,12 +1,26 @@
 # Organizador de Arquivos - Dependências
-# Este script usa apenas bibliotecas padrão do Python, não requer instalação de pacotes externos
+#
+# Python 3.8+ recomendado.
+#
+# Instale tudo com:
+#   pip install -r requirements.txt
+#
+# ---------------------------------------------------------------------------
+# Interface gráfica moderna (cantos arredondados, tema claro/escuro nativo,
+# hover suave e widgets de alto nível). Usado por organizer_gui.py.
+customtkinter>=5.2.0
 
-# Python 3.8+ é necessário para type hints com | (Union types)
-# Se estiver usando Python < 3.10, pode ser necessário ajustar os type hints
+# Geração do ícone .ico customizado (multi-resolução) usado pela janela e
+# pelo atalho da área de trabalho. Usado por scripts/gen_icon.py.
+Pillow>=10.0.0
 
-# Para criar executável (.exe no Windows):
-# pip install pyinstaller
-# pyinstaller --onefile --windowed organizer.py
-
-# Para interface gráfica (futuro):
-# pip install tkinter  # Geralmente já vem com Python
+# ---------------------------------------------------------------------------
+# Observações:
+#
+# - O core (organizer.py) usa apenas a biblioteca padrão.
+# - Se customtkinter não estiver instalado, a GUI mostra uma mensagem
+#   orientando `pip install -r requirements.txt`.
+#
+# Para criar um executável (.exe) opcional no Windows:
+#   pip install pyinstaller
+#   pyinstaller --onefile --windowed --icon=assets/organizer.ico run.py

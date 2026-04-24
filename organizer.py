@@ -8,7 +8,7 @@ import json
 import time
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Callable, Dict, List, Tuple, Optional
 
 DEFAULT_MAP = {
     "Imagens":     [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".svg", ".heic"],
@@ -118,6 +118,7 @@ def organize(
     unknown_name: str,
     ext_map: Dict[str, List[str]],
     log_path: Optional[Path] = None,
+    progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> Tuple[str, int, int, int]:
     """
     Organiza arquivos da pasta source para dest_root baseado nas extensões.
@@ -139,10 +140,13 @@ def organize(
 
     # Snapshot dos itens antes de criar subpastas de destino
     source_items = list(source.iterdir())
+    total_items = len(source_items)
     category_names = set(ext_map.keys()) | {unknown_name}
 
     # --- Primeira passada: copia tudo ---
-    for p in source_items:
+    for item_idx, p in enumerate(source_items):
+        if progress_cb:
+            progress_cb(item_idx + 1, total_items)
         if p.is_dir():
             if p.name in category_names:
                 continue  # não mover pastas de categoria para dentro de si mesmas

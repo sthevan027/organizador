@@ -16,7 +16,32 @@ Script Python para organizar automaticamente arquivos por tipo/extensão na past
 
 1. **Clone ou baixe** os arquivos do projeto
 2. **Python 3.8+** é necessário
-3. **Não precisa instalar dependências** - usa apenas bibliotecas padrão do Python
+3. Instale as dependências da interface:
+
+```bash
+pip install -r requirements.txt
+```
+
+> O core (`organizer.py`) usa apenas a biblioteca padrão. As dependências são
+> só para a GUI moderna (`customtkinter`) e geração do ícone (`Pillow`).
+
+### Abrir a interface gráfica
+
+- **Windows**: basta dar duplo clique em `iniciar.bat` (ele instala as
+  dependências no primeiro uso e abre a GUI sem console preto).
+- **Linux/macOS**: `./iniciar.sh` ou `python run.py`.
+
+### Criar atalho na Área de Trabalho (Windows)
+
+Dê duplo clique em `scripts/criar_atalho.bat`. Um atalho
+**Organizador de Arquivos** com ícone customizado será criado na sua Área de
+Trabalho, apontando para o `pythonw run.py` (GUI sem console).
+
+### Alternar tema claro/escuro
+
+No canto superior direito da janela há um botão `☀ / 🌙` que alterna entre
+claro e escuro. A preferência fica salva em
+`%APPDATA%\organizador\config.json`.
 
 ## 📖 Como Usar
 
@@ -124,11 +149,11 @@ Arquivos processados: 15 | movidos/cop.: 12 | pulados: 2 | erros: 1
 
 ## 🔧 Criando Executável
 
-Para criar um arquivo .exe (Windows):
+Para criar um arquivo .exe (Windows) já com o ícone embutido:
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed organizer.py
+pyinstaller --onefile --windowed --icon=assets/organizer.ico run.py
 ```
 
 ## 🐛 Solução de Problemas
