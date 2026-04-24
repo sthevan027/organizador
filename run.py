@@ -21,8 +21,8 @@ def _ensure_icon() -> None:
         sys.path.insert(0, str(PROJECT_ROOT))
         from scripts.gen_icon import generate
         generate()
-    except Exception:
-        # Falha silenciosa: a GUI roda sem ícone se algo der errado.
+    except (Exception, SystemExit):
+        # Falha silenciosa: gen_icon pode chamar sys.exit (ex.: sem Pillow).
         pass
 
 

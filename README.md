@@ -15,7 +15,7 @@ Script Python para organizar automaticamente arquivos por tipo/extensão na past
 ## 🚀 Instalação
 
 1. **Clone ou baixe** os arquivos do projeto
-2. **Python 3.8+** é necessário
+2. **Python 3.10+** é necessário
 3. Instale as dependências da interface:
 
 ```bash
@@ -167,7 +167,7 @@ pyinstaller --onefile --windowed --icon=assets/organizer.ico run.py
 - Verifique se a pasta existe
 
 ### Python não encontrado
-- Instale Python 3.8+ do [python.org](https://python.org)
+- Instale Python 3.10+ do [python.org](https://python.org)
 - Adicione Python ao PATH
 
 ## 📄 Licença
