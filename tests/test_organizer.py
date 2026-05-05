@@ -11,6 +11,7 @@ from organizer import (
     load_map,
     organize,
 )
+from known_folders import resolve_category_path, PROGRAMAS_IN_SOURCE
 
 
 # ------------------------------------------------------------------ guess_folder
@@ -317,6 +318,154 @@ class TestOrganizeEdgeCases:
         empty.mkdir()
         organize(tmp_path, tmp_path, "move", True, True, "Outros", DEFAULT_MAP)
         assert empty.exists()  # dry_run não remove
+
+
+# ------------------------------------------------------------------ modo bibliotecas (system libraries)
+
+class TestSystemLibraries:
+    """Testes para organize() com use_system_libraries=True usando overrides."""
+
+    def _overrides(self, tmp_path: Path) -> dict:
+        """Retorna caminhos de teste para todas as categorias padrão."""
+        return {
+            "Imagens":    tmp_path / "sys_pictures",
+            "Documentos": tmp_path / "sys_documents",
+            "Vídeos":     tmp_path / "sys_videos",
+            "Áudio":      tmp_path / "sys_music",
+            "Compactados": tmp_path / "sys_documents",
+            "Código":     tmp_path / "sys_documents" / "Código",
+            "Design":     tmp_path / "sys_documents" / "Design",
+            "Fontes":     tmp_path / "sys_documents" / "Fontes",
+            "Outros":     tmp_path / "sys_documents" / "Outros",
+        }
+
+    def _run(self, src, overrides, **kwargs):
+        defaults = dict(
+            source=src, dest_root=src, mode="copy", dry_run=False,
+            delete_empty=False, unknown_name="Outros", ext_map=DEFAULT_MAP,
+            use_system_libraries=True, system_paths_override=overrides,
+        )
+        defaults.update(kwargs)
+        return organize(**defaults)
+
+    def test_image_goes_to_pictures(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "foto.jpg").write_bytes(b"img")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (ov["Imagens"] / "foto.jpg").exists()
+
+    def test_document_goes_to_documents(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "relatorio.pdf").write_bytes(b"pdf")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (ov["Documentos"] / "relatorio.pdf").exists()
+
+    def test_video_goes_to_videos(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "filme.mp4").write_bytes(b"vid")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (ov["Vídeos"] / "filme.mp4").exists()
+
+    def test_audio_goes_to_music(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "musica.mp3").write_bytes(b"mp3")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (ov["Áudio"] / "musica.mp3").exists()
+
+    def test_exe_stays_in_source_programas(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "setup.exe").write_bytes(b"exe")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (src / "Programas" / "setup.exe").exists()
+
+    def test_programas_folder_in_source_not_moved(self, tmp_path):
+        """A pasta source/Programas (destino dos .exe) não deve ser reorganizada."""
+        src = tmp_path / "origem"
+        src.mkdir()
+        programas = src / "Programas"
+        programas.mkdir()
+        (programas / "app.exe").write_bytes(b"exe")
+        ov = self._overrides(tmp_path)
+        _, moved, _, errors = self._run(src, ov)
+        assert errors == 0
+        assert (programas / "app.exe").exists()
+        assert not (programas / "Programas").exists()
+
+    def test_compressed_goes_to_documents(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "arquivo.zip").write_bytes(b"zip")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (ov["Compactados"] / "arquivo.zip").exists()
+
+    def test_original_not_removed_in_copy_mode(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "foto.jpg").write_bytes(b"img")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov)
+        assert (src / "foto.jpg").exists()
+
+    def test_original_removed_in_move_mode(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "foto.jpg").write_bytes(b"img")
+        ov = self._overrides(tmp_path)
+        self._run(src, ov, mode="move")
+        assert not (src / "foto.jpg").exists()
+        assert (ov["Imagens"] / "foto.jpg").exists()
+
+    def test_dry_run_does_not_copy(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        (src / "foto.jpg").write_bytes(b"img")
+        ov = self._overrides(tmp_path)
+        report, moved, _, _ = self._run(src, ov, dry_run=True)
+        assert moved == 0
+        assert not (ov["Imagens"] / "foto.jpg").exists()
+        assert "[DRY-RUN]" in report
+
+
+# ------------------------------------------------------------------ known_folders.resolve_category_path
+
+class TestResolveCategoryPath:
+    def test_programas_stays_in_source(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        result = resolve_category_path("Programas", src, tmp_path)
+        assert result == src / "Programas"
+
+    def test_override_respected(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        custom = tmp_path / "custom_pictures"
+        result = resolve_category_path("Imagens", src, tmp_path, {"Imagens": custom})
+        assert result == custom
+
+    def test_unknown_category_falls_back_to_documents_subfolder(self, tmp_path):
+        src = tmp_path / "origem"
+        src.mkdir()
+        docs = tmp_path / "Documents"
+        docs.mkdir()
+        result = resolve_category_path("MinhaCategoria", src, tmp_path, {
+            "Documents": docs,
+            "MinhaCategoria": docs / "MinhaCategoria",
+        })
+        assert "MinhaCategoria" in str(result)
+
+    def test_programas_in_source_frozenset(self):
+        assert "Programas" in PROGRAMAS_IN_SOURCE
 
 
 # ------------------------------------------------------------------ organize — log

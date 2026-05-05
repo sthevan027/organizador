@@ -22,6 +22,7 @@ except ImportError as exc:  # pragma: no cover - orientação ao usuário
     ) from exc
 
 from organizer import DEFAULT_MAP, load_map, organize
+import known_folders
 from theme import (
     FONT,
     LIGHT,
@@ -109,6 +110,7 @@ class OrganizerApp(ctk.CTk):
         self.mode = tk.StringVar(value="move")
         self.dry_run = tk.BooleanVar(value=True)
         self.delete_empty = tk.BooleanVar(value=False)
+        self.use_system_libraries = tk.BooleanVar(value=False)
         self.unknown_name = tk.StringVar(value="Outros")
         self.config_path = tk.StringVar()
 
@@ -456,6 +458,33 @@ class OrganizerApp(ctk.CTk):
         empty_sw.pack(anchor="w", pady=SPACING["xs"])
         self._themed_register(empty_sw, text_color="text", progress_color="primary")
 
+        # Switch "Usar bibliotecas do sistema"
+        sys_libs_color = self._pair("accent") if known_folders.is_available() else self._pair("neutral")
+        sys_sw = ctk.CTkSwitch(
+            toggles,
+            text="Usar bibliotecas do Windows  (Imagens, Documentos, Vídeos, Música)",
+            variable=self.use_system_libraries,
+            font=FONT["label"],
+            text_color=self._pair("text"),
+            progress_color=sys_libs_color,
+            button_color="#ffffff",
+            button_hover_color="#f3f4f6",
+            state="normal" if known_folders.is_available() else "disabled",
+            command=self._on_system_libraries_toggle,
+        )
+        sys_sw.pack(anchor="w", pady=SPACING["xs"])
+        self._themed_register(sys_sw, text_color="text")
+        if not known_folders.is_available():
+            _Tooltip(sys_sw, "Disponível apenas no Windows", self._tooltips_palette)
+        else:
+            _Tooltip(
+                sys_sw,
+                "Arquivos vão para as pastas reais do sistema.\n"
+                "Instaladores (.exe, .msi, …) ficam em Origem/Programas.",
+                self._tooltips_palette,
+            )
+        self._sys_libs_switch = sys_sw
+
         # Pasta para desconhecidos
         unk_row = ctk.CTkFrame(body, fg_color="transparent")
         unk_row.pack(fill="x")
@@ -485,6 +514,14 @@ class OrganizerApp(ctk.CTk):
 
     def _on_mode_change(self, value: str) -> None:
         self.mode.set("copy" if value == "Copiar" else "move")
+
+    def _on_system_libraries_toggle(self) -> None:
+        enabled = self.use_system_libraries.get() and known_folders.is_available()
+        state = "disabled" if enabled else "normal"
+        try:
+            self._dst_combo.configure(state=state)
+        except Exception:
+            pass
 
     # ---- botões de ação ---------------------------------------------------
 
@@ -964,7 +1001,10 @@ class OrganizerApp(ctk.CTk):
         if not self.source_path.get():
             messagebox.showerror("Erro", "Selecione a pasta de origem.")
             return
-        if not self.dest_path.get():
+        use_sys = (
+            self.use_system_libraries.get() and known_folders.is_available()
+        )
+        if not use_sys and not self.dest_path.get().strip():
             messagebox.showerror("Erro", "Selecione a pasta de destino.")
             return
         self._stop_event.clear()
@@ -974,7 +1014,12 @@ class OrganizerApp(ctk.CTk):
     def _organize_worker(self) -> None:
         try:
             source = Path(self.source_path.get())
-            dest = Path(self.dest_path.get())
+            use_sys = self.use_system_libraries.get() and known_folders.is_available()
+            dest_raw = self.dest_path.get().strip()
+            if use_sys and not dest_raw:
+                dest = source
+            else:
+                dest = Path(dest_raw)
             cfgp = Path(self.config_path.get()) if self.config_path.get() else None
             ext_map = load_map(cfgp)
 
@@ -982,7 +1027,10 @@ class OrganizerApp(ctk.CTk):
             self.log_queue.put(sep)
             self.log_queue.put("Iniciando organização...")
             self.log_queue.put(f"Origem:  {source}")
-            self.log_queue.put(f"Destino: {dest}")
+            if use_sys:
+                self.log_queue.put("Destino: bibliotecas do sistema (Documentos, Imagens, …)")
+            else:
+                self.log_queue.put(f"Destino: {dest}")
             self.log_queue.put(
                 f"Modo:    {'Mover' if self.mode.get() == 'move' else 'Copiar'}"
             )
@@ -1002,6 +1050,9 @@ class OrganizerApp(ctk.CTk):
                 unknown_name=self.unknown_name.get(),
                 ext_map=ext_map,
                 progress_cb=progress_cb,
+                use_system_libraries=(
+                    self.use_system_libraries.get() and known_folders.is_available()
+                ),
             )
 
             for line in report.split("\n"):

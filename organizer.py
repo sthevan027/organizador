@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple, Optional
 
+import known_folders
+
 DEFAULT_MAP = {
     "Imagens":     [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".svg", ".heic"],
     "Documentos":  [".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".csv", ".xls", ".xlsx", ".ppt", ".pptx", ".md"],
@@ -119,12 +121,25 @@ def organize(
     ext_map: Dict[str, List[str]],
     log_path: Optional[Path] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
+    use_system_libraries: bool = False,
+    system_paths_override: Optional[Dict[str, Path]] = None,
 ) -> Tuple[str, int, int, int]:
     """
     Organiza arquivos da pasta source para dest_root baseado nas extensões.
 
-    Returns:
-        Tuple (relatório, itens_organizados, itens_pulados, erros)
+    Parameters
+    ----------
+    use_system_libraries:
+        Quando True, arquivos vão para as bibliotecas reais do sistema
+        (Imagens → Pictures, Documentos → Documents, etc.) em vez de subpastas
+        dentro de dest_root. Programas sempre fica em source/Programas.
+    system_paths_override:
+        Mapeamento categoria → Path usado exclusivamente em testes para evitar
+        dependência de caminhos reais do sistema operacional.
+
+    Returns
+    -------
+    Tuple (relatório, itens_organizados, itens_pulados, erros)
     """
     moved = skipped = errors = 0
     logs: List[str] = []
@@ -138,10 +153,35 @@ def organize(
 
     dest_root.mkdir(parents=True, exist_ok=True)
 
+    def _resolve_target_dir(category: str) -> Path:
+        """Retorna o diretório de destino para uma categoria."""
+        if use_system_libraries:
+            target = known_folders.resolve_category_path(
+                category, source, dest_root, system_paths_override
+            )
+            # Segurança: se o destino resolvido for dentro da origem
+            # (exceto source/Programas que é intencional), usa fallback.
+            try:
+                target.relative_to(source)
+                if category not in known_folders.PROGRAMAS_IN_SOURCE:
+                    logs.append(
+                        f"[AVISO] Destino resolvido para dentro da origem "
+                        f"({category}). Usando dest_root como fallback."
+                    )
+                    return dest_root / category
+            except ValueError:
+                pass  # não está dentro de source — ok
+            return target
+        return dest_root / category
+
     # Snapshot dos itens antes de criar subpastas de destino
     source_items = list(source.iterdir())
     total_items = len(source_items)
     category_names = set(ext_map.keys()) | {unknown_name}
+
+    # No modo bibliotecas, a pasta source/Programas é destino — nunca mover
+    if use_system_libraries:
+        category_names |= known_folders.PROGRAMAS_IN_SOURCE
 
     # --- Primeira passada: copia tudo ---
     for item_idx, p in enumerate(source_items):
@@ -156,7 +196,7 @@ def organize(
                 if target_folder == unknown_name:
                     target_folder = analyze_folder_content(p, ext_map)
 
-                target_dir = dest_root / target_folder
+                target_dir = _resolve_target_dir(target_folder)
                 target_dir.mkdir(parents=True, exist_ok=True)
 
                 target_path = target_dir / p.name
@@ -185,7 +225,7 @@ def organize(
             continue
 
         target_folder = guess_folder(p.suffix, ext_map, unknown_name)
-        target_dir = dest_root / target_folder
+        target_dir = _resolve_target_dir(target_folder)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         target_path = target_dir / p.name
@@ -302,6 +342,9 @@ Exemplos:
 
   # Usar configuração personalizada de extensões
   python organizer.py --source ~/Downloads --config config_extensoes.json
+
+  # Enviar arquivos para as bibliotecas do Windows (Documentos, Imagens, …)
+  python organizer.py --source ~/Downloads --system-folders --mode move
         """,
     )
     ap.add_argument("--source", "-s", required=True,
@@ -320,8 +363,20 @@ Exemplos:
                     help="Arquivo JSON com mapeamento extensão -> pasta")
     ap.add_argument("--log",
                     help="Caminho do arquivo de log (ex.: logs/organizer.log)")
+    ap.add_argument("--system-folders", action="store_true",
+                    help=(
+                        "Envia arquivos para as bibliotecas reais do Windows "
+                        "(Imagens→Pictures, Documentos→Documents, Vídeos→Videos, "
+                        "Áudio→Music). Instaladores (.exe/.msi/…) ficam em "
+                        "source/Programas. Categorias sem mapeamento vão para "
+                        "Documents/<categoria>. Requer Windows."
+                    ))
 
     args = ap.parse_args()
+
+    if args.system_folders and not known_folders.is_available():
+        print("[AVISO] --system-folders só está disponível no Windows. "
+              "O modo será ignorado e os arquivos irão para dest_root.")
 
     source = Path(args.source).expanduser().resolve()
     dest = Path(args.dest).expanduser().resolve() if args.dest else source
@@ -332,7 +387,10 @@ Exemplos:
         ext_map = load_map(config_path)
 
         print(f"Organizando: {source}")
-        print(f"Destino:     {dest}")
+        if args.system_folders and known_folders.is_available():
+            print("Destino:     bibliotecas do sistema (Documentos, Imagens, …)")
+        else:
+            print(f"Destino:     {dest}")
         print(f"Modo:        {'Cópia' if args.mode == 'copy' else 'Mover'}")
         if args.dry_run:
             print("*** MODO TESTE — nenhum arquivo será alterado ***")
@@ -340,7 +398,8 @@ Exemplos:
 
         report, moved, skipped, errors = organize(
             source, dest, args.mode, args.dry_run, args.delete_empty,
-            args.unknown_name, ext_map, log_path
+            args.unknown_name, ext_map, log_path,
+            use_system_libraries=args.system_folders and known_folders.is_available(),
         )
 
         print(report)
