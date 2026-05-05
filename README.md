@@ -5,6 +5,7 @@ Script Python para organizar automaticamente arquivos por tipo/extensão na past
 ## ✨ Funcionalidades
 
 - 🗂️ **Organização automática** por tipo de arquivo (imagens, documentos, vídeos, etc.)
+- 🏠 **Modo bibliotecas do sistema** (Windows) — envia arquivos direto para Documentos, Imagens, Vídeos e Música reais
 - 🔄 **Modo move ou copy** - escolha se quer mover ou copiar os arquivos
 - 🧪 **Dry-run** - teste sem alterar nada
 - ⚙️ **Configuração personalizada** via arquivo JSON
@@ -90,6 +91,34 @@ python organizer.py --source "C:/Users/SEU_USUARIO/Downloads" --config config_ex
 python organizer.py --source "C:/Users/SEU_USUARIO/Downloads" --delete-empty
 ```
 
+### Modo Bibliotecas do Sistema (Windows)
+
+Envia cada arquivo diretamente para a biblioteca real do Windows, respeitando
+redirecionamentos do OneDrive e configurações de perfil:
+
+```bash
+# Simular (ver o que aconteceria)
+python organizer.py --source "C:/Users/SEU_USUARIO/Downloads" --system-folders --dry-run
+
+# Organizar de verdade
+python organizer.py --source "C:/Users/SEU_USUARIO/Downloads" --system-folders --mode move
+```
+
+| Categoria | Destino no modo bibliotecas |
+|-----------|----------------------------|
+| Imagens | Pasta Imagens do Windows (`%USERPROFILE%\Pictures`) |
+| Documentos | Pasta Documentos (`%USERPROFILE%\Documents`) |
+| Vídeos | Pasta Vídeos (`%USERPROFILE%\Videos`) |
+| Áudio | Pasta Música (`%USERPROFILE%\Music`) |
+| Compactados | Raiz de Documentos |
+| Programas | `source\Programas` (subpasta na origem) |
+| Código / Design / Fontes / Outros | `Documentos\<nome da categoria>` |
+| Categorias personalizadas (JSON) | `Documentos\<nome da categoria>` |
+
+> **Observação**: o campo Destino é ignorado para as categorias acima.
+> Instaladores (`.exe`, `.msi`, …) sempre ficam em uma subpasta `Programas`
+> dentro da pasta de origem para facilitar limpeza manual posterior.
+
 ## ⚙️ Configuração
 
 ### Arquivo de Configuração (config_extensoes.json)
@@ -129,6 +158,7 @@ O script já vem com categorias pré-definidas:
 | `--unknown-name` | Nome da pasta para extensões não mapeadas | "Outros" |
 | `--config` | Arquivo JSON com configuração | Padrão |
 | `--log` | Arquivo de log | - |
+| `--system-folders` | Enviar para bibliotecas reais do Windows | False |
 
 ## 📝 Exemplos de Log
 
