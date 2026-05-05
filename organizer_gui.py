@@ -1001,7 +1001,10 @@ class OrganizerApp(ctk.CTk):
         if not self.source_path.get():
             messagebox.showerror("Erro", "Selecione a pasta de origem.")
             return
-        if not self.dest_path.get():
+        use_sys = (
+            self.use_system_libraries.get() and known_folders.is_available()
+        )
+        if not use_sys and not self.dest_path.get().strip():
             messagebox.showerror("Erro", "Selecione a pasta de destino.")
             return
         self._stop_event.clear()
@@ -1011,7 +1014,12 @@ class OrganizerApp(ctk.CTk):
     def _organize_worker(self) -> None:
         try:
             source = Path(self.source_path.get())
-            dest = Path(self.dest_path.get())
+            use_sys = self.use_system_libraries.get() and known_folders.is_available()
+            dest_raw = self.dest_path.get().strip()
+            if use_sys and not dest_raw:
+                dest = source
+            else:
+                dest = Path(dest_raw)
             cfgp = Path(self.config_path.get()) if self.config_path.get() else None
             ext_map = load_map(cfgp)
 
@@ -1019,7 +1027,6 @@ class OrganizerApp(ctk.CTk):
             self.log_queue.put(sep)
             self.log_queue.put("Iniciando organização...")
             self.log_queue.put(f"Origem:  {source}")
-            use_sys = self.use_system_libraries.get() and known_folders.is_available()
             if use_sys:
                 self.log_queue.put("Destino: bibliotecas do sistema (Documentos, Imagens, …)")
             else:
