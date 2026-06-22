@@ -1,5 +1,9 @@
 # 📁 Organizador de Arquivos
 
+![Status](https://img.shields.io/badge/status-em%20produ%C3%A7%C3%A3o-success)
+
+![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white) ![CustomTkinter](https://img.shields.io/badge/CustomTkinter-5.2-3776AB?logo=python&logoColor=white) ![Pillow](https://img.shields.io/badge/Pillow-10-3776AB?logo=python&logoColor=white)
+
 Script Python para organizar automaticamente arquivos por tipo/extensão na pasta Downloads (ou qualquer outra pasta).
 
 ## ✨ Funcionalidades
