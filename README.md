@@ -1,6 +1,7 @@
 # 📁 Organizador de Arquivos
 
 ![Status](https://img.shields.io/badge/status-em%20produ%C3%A7%C3%A3o-success)
+[![Release](https://img.shields.io/github/v/release/sthevan027/organizador)](https://github.com/sthevan027/organizador/releases/latest)
 
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white) ![CustomTkinter](https://img.shields.io/badge/CustomTkinter-5.2-3776AB?logo=python&logoColor=white) ![Pillow](https://img.shields.io/badge/Pillow-10-3776AB?logo=python&logoColor=white)
 
@@ -19,6 +20,14 @@ Script Python para organizar automaticamente arquivos por tipo/extensão na past
 - 🧹 **Limpeza de Disco** - temporários do Windows, cache de navegadores, Lixeira, downloads parados e cache de desenvolvimento (veja a seção dedicada abaixo)
 
 ## 🚀 Instalação
+
+> **Windows, sem instalar Python**: baixe o `.exe` pronto em
+> [Releases](https://github.com/sthevan027/organizador/releases/latest) e
+> dê duplo clique. O Windows pode avisar "Windows protegeu seu PC"
+> (SmartScreen, por ser um `.exe` não assinado) — clique em "Mais
+> informações" → "Executar assim mesmo".
+
+Pra rodar a partir do código-fonte:
 
 1. **Clone ou baixe** os arquivos do projeto
 2. **Python 3.10+** é necessário
@@ -138,14 +147,16 @@ em disco. Sempre analisa antes de apagar — nada é removido sem revisão.
 | Lixeira | Esvazia a Lixeira do Windows |
 | Downloads parados | **Lista** (não apaga sozinho) arquivos sem uso há X dias em Downloads |
 | Cache de dev | `node_modules` de projetos parados + cache do npm/pip/Docker |
+| Crash dumps de apps | Dumps de erro do Windows (WER) e `%LOCALAPPDATA%\CrashDumps` — sobras de apps que travaram |
 
 ### Pela interface gráfica
 
-Clique no ícone 🧹 no topo da janela do Organizador para abrir a janela de
-Limpeza de Disco. Fluxo: marque as categorias → **Analisar** (sempre
-seguro, só lista e soma tamanhos) → revise o relatório → **Limpar
-selecionadas** (com "Modo Teste" ligado por padrão; desligue e confirme
-para remover de verdade).
+Clique no ícone 🧹 no topo da janela do Organizador para trocar pra tela de
+Limpeza de Disco (mesma janela, sem abrir outra). Fluxo: marque as
+categorias → **Analisar** (sempre seguro, só lista e soma tamanhos) →
+revise o relatório → **Limpar selecionadas** (com "Modo Teste" ligado por
+padrão; desligue e confirme para remover de verdade). Use "← Voltar" pra
+retornar à tela de organização.
 
 ### Pela linha de comando
 
@@ -161,6 +172,9 @@ python cleaner.py --apply
 
 # Incluir cache de dev, procurando node_modules órfãos em D:/Projetos
 python cleaner.py --categories dev_cache --dev-search-root D:/Projetos --apply
+
+# Analisar crash dumps de apps (WER)
+python cleaner.py --categories crash_dumps
 ```
 
 | Parâmetro | Descrição | Padrão |
@@ -232,12 +246,16 @@ Arquivos processados: 15 | movidos/cop.: 12 | pulados: 2 | erros: 1
 
 ## 🔧 Criando Executável
 
-Para criar um arquivo .exe (Windows) já com o ícone embutido:
+Para criar um arquivo .exe (Windows) já com o ícone embutido (é assim que
+o `.exe` das [Releases](https://github.com/sthevan027/organizador/releases)
+é gerado):
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --icon=assets/organizer.ico run.py
+pyinstaller --onefile --windowed --icon=assets/organizer.ico --name Organizador run.py
 ```
+
+O executável final fica em `dist/Organizador.exe`.
 
 ## 🐛 Solução de Problemas
 
