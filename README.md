@@ -16,6 +16,7 @@ Script Python para organizar automaticamente arquivos por tipo/extensão na past
 - 📝 **Log detalhado** de todas as operações
 - 🗑️ **Limpeza opcional** de pastas vazias
 - 🛡️ **Proteção contra sobrescrita** - adiciona contador se arquivo já existir
+- 🧹 **Limpeza de Disco** - temporários do Windows, cache de navegadores, Lixeira, downloads parados e cache de desenvolvimento (veja a seção dedicada abaixo)
 
 ## 🚀 Instalação
 
@@ -122,6 +123,54 @@ python organizer.py --source "C:/Users/SEU_USUARIO/Downloads" --system-folders -
 > **Observação**: o campo Destino é ignorado para as categorias acima.
 > Instaladores (`.exe`, `.msi`, …) sempre ficam em uma subpasta `Programas`
 > dentro da pasta de origem para facilitar limpeza manual posterior.
+
+## 🧹 Limpeza de Disco
+
+Funcionalidade separada (`cleaner.py` / `cleaner_gui.py`) para liberar espaço
+em disco. Sempre analisa antes de apagar — nada é removido sem revisão.
+
+### Categorias
+
+| Categoria | O que é |
+|-----------|---------|
+| Temporários | `%TEMP%` do usuário, `C:\Windows\Temp` e Prefetch |
+| Cache de navegadores | Cache de Chrome, Edge e Firefox — **nunca** senhas, histórico ou cookies |
+| Lixeira | Esvazia a Lixeira do Windows |
+| Downloads parados | **Lista** (não apaga sozinho) arquivos sem uso há X dias em Downloads |
+| Cache de dev | `node_modules` de projetos parados + cache do npm/pip/Docker |
+
+### Pela interface gráfica
+
+Clique no ícone 🧹 no topo da janela do Organizador para abrir a janela de
+Limpeza de Disco. Fluxo: marque as categorias → **Analisar** (sempre
+seguro, só lista e soma tamanhos) → revise o relatório → **Limpar
+selecionadas** (com "Modo Teste" ligado por padrão; desligue e confirme
+para remover de verdade).
+
+### Pela linha de comando
+
+```bash
+# Analisar tudo, sem apagar nada (padrão)
+python cleaner.py
+
+# Analisar só temporários e cache de navegador
+python cleaner.py --categories temp,browser_cache
+
+# Aplicar de verdade (pede confirmação, a menos que --yes seja usado)
+python cleaner.py --apply
+
+# Incluir cache de dev, procurando node_modules órfãos em D:/Projetos
+python cleaner.py --categories dev_cache --dev-search-root D:/Projetos --apply
+```
+
+| Parâmetro | Descrição | Padrão |
+|-----------|-----------|---------|
+| `--categories` | Categorias separadas por vírgula | todas |
+| `--apply` | Remove de verdade (sem isso, só simula) | False |
+| `--yes` | Não pede confirmação antes de aplicar | False |
+| `--old-downloads-days` | Dias sem uso para listar em Downloads parados | 30 |
+| `--dev-search-root` | Pasta onde procurar `node_modules` órfãos (repetível) | nenhuma |
+| `--dev-stale-days` | Dias sem atividade para considerar `node_modules` órfão | 60 |
 
 ## ⚙️ Configuração
 

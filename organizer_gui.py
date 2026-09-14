@@ -22,6 +22,7 @@ except ImportError as exc:  # pragma: no cover - orientação ao usuário
     ) from exc
 
 from organizer import DEFAULT_MAP, load_map, organize
+from cleaner_gui import CleanerPanel
 import known_folders
 from theme import (
     FONT,
@@ -165,18 +166,20 @@ class OrganizerApp(ctk.CTk):
     def _build_ui(self) -> None:
         self._build_header()
 
-        main = ctk.CTkScrollableFrame(
+        self._organizer_view = ctk.CTkScrollableFrame(
             self,
             fg_color=self._pair("bg"),
             corner_radius=0,
         )
-        main.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
+        self._organizer_view.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
 
-        self._build_paths_card(main)
-        self._build_options_card(main)
-        self._build_actions(main)
-        self._build_progress_card(main)
-        self._build_log_card(main)
+        self._build_paths_card(self._organizer_view)
+        self._build_options_card(self._organizer_view)
+        self._build_actions(self._organizer_view)
+        self._build_progress_card(self._organizer_view)
+        self._build_log_card(self._organizer_view)
+
+        self._cleaner_panel: Optional[CleanerPanel] = None
 
     # ---- header -----------------------------------------------------------
 
@@ -214,7 +217,7 @@ class OrganizerApp(ctk.CTk):
         subtitle = ctk.CTkLabel(
             left,
             text="Ordene em segundos — simples e seguro.",
-            text_color="#c7d2fe",
+            text_color="#b7b0a3",
             font=FONT["header_subtitle"],
             anchor="w",
         )
@@ -222,6 +225,31 @@ class OrganizerApp(ctk.CTk):
 
         right = ctk.CTkFrame(inner, fg_color="transparent")
         right.pack(side="right", fill="y")
+
+        self._cleaner_btn = ctk.CTkButton(
+            right,
+            text="🧹",
+            width=30,
+            height=30,
+            corner_radius=15,
+            font=(FONT["button"][0], 14),
+            fg_color=self._pair("header_chip"),
+            hover_color=self._pair("header_chip_hover"),
+            text_color="#ffffff",
+            border_width=0,
+            command=self._open_cleaner,
+        )
+        self._themed_register(
+            self._cleaner_btn,
+            fg_color="header_chip",
+            hover_color="header_chip_hover",
+        )
+        self._cleaner_btn.pack(side="right", padx=(0, SPACING["xs"]))
+        _Tooltip(
+            self._cleaner_btn,
+            "Limpeza de Disco",
+            self._tooltips_palette,
+        )
 
         self._theme_btn = ctk.CTkButton(
             right,
@@ -247,6 +275,22 @@ class OrganizerApp(ctk.CTk):
             "Alternar tema claro/escuro",
             self._tooltips_palette,
         )
+
+    def _open_cleaner(self) -> None:
+        if self.is_organizing:
+            messagebox.showwarning("Aguarde", "Espere a organização atual terminar antes de abrir a limpeza.")
+            return
+        if self._cleaner_panel is None:
+            self._cleaner_panel = CleanerPanel(
+                self, theme_name=self.theme_name, on_back=self._show_organizer,
+            )
+        self._organizer_view.pack_forget()
+        self._cleaner_panel.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
+
+    def _show_organizer(self) -> None:
+        if self._cleaner_panel is not None:
+            self._cleaner_panel.pack_forget()
+        self._organizer_view.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
 
     def _theme_btn_text(self) -> str:
         return "☀" if self.theme_name == "dark" else "🌙"
@@ -459,7 +503,7 @@ class OrganizerApp(ctk.CTk):
         self._themed_register(empty_sw, text_color="text", progress_color="primary")
 
         # Switch "Usar bibliotecas do sistema"
-        sys_libs_color = self._pair("accent") if known_folders.is_available() else self._pair("neutral")
+        sys_libs_color = self._pair("primary") if known_folders.is_available() else self._pair("neutral")
         sys_sw = ctk.CTkSwitch(
             toggles,
             text="Usar bibliotecas do Windows  (Imagens, Documentos, Vídeos, Música)",
@@ -603,11 +647,11 @@ class OrganizerApp(ctk.CTk):
             parent, text=text, command=cmd,
             font=FONT["button"], height=36, width=width,
             corner_radius=RADIUS["button"],
-            fg_color=self._pair("warning"),
-            hover_color=self._pair("warning_hover"),
+            fg_color=self._pair("neutral"),
+            hover_color=self._pair("neutral_hover"),
             text_color="#ffffff",
         )
-        self._themed_register(btn, fg_color="warning", hover_color="warning_hover")
+        self._themed_register(btn, fg_color="neutral", hover_color="neutral_hover")
         if tip:
             _Tooltip(btn, tip, self._tooltips_palette)
         return btn
@@ -631,11 +675,11 @@ class OrganizerApp(ctk.CTk):
             parent, text=text, command=cmd,
             font=FONT["button"], height=36, width=width,
             corner_radius=RADIUS["button"],
-            fg_color=self._pair("accent"),
-            hover_color=self._pair("accent_hover"),
+            fg_color=self._pair("neutral"),
+            hover_color=self._pair("neutral_hover"),
             text_color="#ffffff",
         )
-        self._themed_register(btn, fg_color="accent", hover_color="accent_hover")
+        self._themed_register(btn, fg_color="neutral", hover_color="neutral_hover")
         if tip:
             _Tooltip(btn, tip, self._tooltips_palette)
         return btn
@@ -685,7 +729,7 @@ class OrganizerApp(ctk.CTk):
 
         self._stat_cards: Dict[str, Dict[str, ctk.CTkLabel]] = {}
         specs = [
-            ("total",    "Total",        "primary"),
+            ("total",    "Total",        "text"),
             ("moved",    "Organizados",  "success"),
             ("skipped",  "Pulados",      "warning"),
             ("errors",   "Erros",        "danger"),

@@ -23,6 +23,7 @@ _FOLDERID: Dict[str, str] = {
     "Pictures":  "33E28130-4E1E-4676-835A-98395C3BC3BB",
     "Videos":    "18989B1D-99B5-455B-841C-AB7C74E4DDFC",
     "Music":     "4BD8D571-6D19-48D3-BE97-422220080E43",
+    "Downloads": "374DE290-123F-4565-9164-39C4925E467B",
 }
 
 # Nomes em inglês usados como fallback (Path.home() / nome)
@@ -31,6 +32,7 @@ _ENGLISH_FALLBACKS: Dict[str, str] = {
     "Pictures":  "Pictures",
     "Videos":    "Videos",
     "Music":     "Music",
+    "Downloads": "Downloads",
 }
 
 # Nomes em português como segundo fallback (quando não existe a pasta em inglês)
@@ -39,6 +41,7 @@ _PTBR_FALLBACKS: Dict[str, str] = {
     "Pictures":  "Imagens",
     "Videos":    "Vídeos",
     "Music":     "Música",
+    "Downloads": "Downloads",
 }
 
 
@@ -126,6 +129,11 @@ PROGRAMAS_IN_SOURCE: FrozenSet[str] = frozenset({"Programas"})
 def is_available() -> bool:
     """Retorna True se a plataforma suporta o modo bibliotecas."""
     return sys.platform == "win32"
+
+
+def downloads_folder() -> Path:
+    """Retorna a pasta Downloads real do usuário (respeita OneDrive no Windows)."""
+    return _get_system_folder("Downloads")
 
 
 def resolve_category_path(
