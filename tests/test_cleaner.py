@@ -10,6 +10,7 @@ from cleaner import (
     clean,
     human_bytes,
     scan_browser_cache,
+    scan_crash_dumps,
     scan_dev_cache,
     scan_old_downloads,
     scan_temp,
@@ -118,6 +119,36 @@ class TestScanOldDownloads:
 
     def test_missing_downloads_dir_returns_empty(self, tmp_path):
         assert scan_old_downloads(tmp_path / "nao_existe", days=30) == []
+
+
+# ------------------------------------------------------------------ scan_crash_dumps
+
+class TestScanCrashDumps:
+    def test_lists_dumps_and_wer_reports(self, tmp_path):
+        crash_dir = tmp_path / "CrashDumps"
+        crash_dir.mkdir()
+        (crash_dir / "app.exe.12345.dmp").write_bytes(b"x" * 300)
+        report = crash_dir / "ReportOldApp"
+        report.mkdir()
+        (report / "Report.wer").write_bytes(b"y" * 40)
+
+        items = scan_crash_dumps([("CrashDumps", crash_dir)])
+
+        assert len(items) == 2
+        names = {i.path.name for i in items}
+        assert names == {"app.exe.12345.dmp", "ReportOldApp"}
+        assert all(i.category == "crash_dumps" for i in items)
+
+    def test_empty_entries_are_skipped(self, tmp_path):
+        crash_dir = tmp_path / "CrashDumps"
+        crash_dir.mkdir()
+        (crash_dir / "vazio.dmp").write_bytes(b"")
+
+        assert scan_crash_dumps([("CrashDumps", crash_dir)]) == []
+
+    def test_missing_dir_is_ignored(self, tmp_path):
+        items = scan_crash_dumps([("Não existe", tmp_path / "nao_existe")])
+        assert items == []
 
 
 # ------------------------------------------------------------------ scan_dev_cache

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Limpeza de disco: temporários, cache de navegadores, lixeira, downloads
-parados e cache de desenvolvimento (node_modules órfãos, npm/pip, Docker).
+parados, cache de desenvolvimento (node_modules órfãos, npm/pip, Docker) e
+crash dumps de apps (Windows Error Reporting).
 
 Segue o mesmo padrão de segurança do organizer.py: toda operação tem um
 modo de simulação (dry-run) que só relata o que seria removido, sem tocar
@@ -28,6 +29,7 @@ CATEGORIES: Dict[str, str] = {
     "recycle_bin":    "Lixeira",
     "old_downloads":  "Downloads parados",
     "dev_cache":      "Cache de desenvolvimento",
+    "crash_dumps":    "Crash dumps de apps (WER)",
 }
 
 # Removidos automaticamente sem apagar o arquivo/pasta original de verdade —
@@ -121,6 +123,20 @@ def _default_browser_cache_dirs() -> List[Tuple[str, Path]]:
         except (OSError, PermissionError):
             pass
     return dirs
+
+
+def _default_crash_dump_dirs() -> List[Tuple[str, Path]]:
+    if platform.system() != "Windows":
+        return []
+    local = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+    programdata = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData"))
+    return [
+        ("CrashDumps", local / "CrashDumps"),
+        ("WER — fila (usuário)", local / "Microsoft" / "Windows" / "WER" / "ReportQueue"),
+        ("WER — arquivados (usuário)", local / "Microsoft" / "Windows" / "WER" / "ReportArchive"),
+        ("WER — fila (sistema)", programdata / "Microsoft" / "Windows" / "WER" / "ReportQueue"),
+        ("WER — arquivados (sistema)", programdata / "Microsoft" / "Windows" / "WER" / "ReportArchive"),
+    ]
 
 
 def _npm_cache_dir() -> Optional[Path]:
@@ -234,6 +250,38 @@ def scan_browser_cache(
                 path=d,
                 size_bytes=size,
                 kind=_CONTENTS_ONLY,
+            ))
+    return items
+
+
+def scan_crash_dumps(
+    dump_dirs: Optional[List[Tuple[str, Path]]] = None,
+) -> List[CleanItem]:
+    """Lista dumps de crash de apps: %LOCALAPPDATA%\\CrashDumps e as filas
+    do Windows Error Reporting (WER), de usuário e de sistema.
+
+    Cada item é um dump (.dmp) ou uma pasta de relatório WER — um por app
+    que travou.
+    """
+    dump_dirs = dump_dirs if dump_dirs is not None else _default_crash_dump_dirs()
+    items: List[CleanItem] = []
+    for label, d in dump_dirs:
+        if not d.exists():
+            continue
+        try:
+            entries = list(d.iterdir())
+        except (OSError, PermissionError):
+            continue
+        for entry in entries:
+            size = _entry_size(entry)
+            if size <= 0:
+                continue
+            items.append(CleanItem(
+                category="crash_dumps",
+                label=f"{label}: {entry.name}",
+                path=entry,
+                size_bytes=size,
+                kind="dir" if entry.is_dir() else "file",
             ))
     return items
 
@@ -404,6 +452,8 @@ def scan_all(
         items += scan_old_downloads(days=old_downloads_days)
     if "dev_cache" in categories:
         items += scan_dev_cache(dev_search_roots or [], stale_days=dev_stale_days)
+    if "crash_dumps" in categories:
+        items += scan_crash_dumps()
     return items
 
 
@@ -498,7 +548,8 @@ def _clear_dir_contents(folder: Path) -> None:
 def main() -> None:  # pragma: no cover
     ap = argparse.ArgumentParser(
         description="Limpeza de disco: temporários, cache de navegadores, "
-                     "lixeira, downloads parados e cache de desenvolvimento",
+                     "lixeira, downloads parados, cache de desenvolvimento "
+                     "e crash dumps de apps",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemplos:

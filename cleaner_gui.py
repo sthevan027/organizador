@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Janela de Limpeza de Disco (CustomTkinter).
+"""Painel de Limpeza de Disco (CustomTkinter).
 
-Abre como Toplevel a partir do Organizador de Arquivos, reaproveitando os
-tokens de tema em theme.py. Fluxo: Analisar (sempre seguro, só lista e
-soma tamanhos) -> revisar o relatório -> Limpar selecionadas (pede
-confirmação quando "Modo Teste" está desligado).
+Embutido na mesma janela do Organizador de Arquivos (troca de view, sem
+abrir janela nova), reaproveitando os tokens de tema em theme.py. Fluxo:
+Analisar (sempre seguro, só lista e soma tamanhos) -> revisar o relatório
+-> Limpar selecionadas (pede confirmação quando "Modo Teste" está
+desligado).
 """
 
 from __future__ import annotations
 
 import queue
-import sys
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
 from cleaner import CATEGORIES, CleanItem, clean, human_bytes, scan_all
 from theme import FONT, RADIUS, SPACING, palette
-
-ICON_PATH = Path(__file__).resolve().parent / "assets" / "organizer.ico"
 
 _CATEGORY_TIPS: Dict[str, str] = {
     "temp": "%TEMP% do usuário, C:\\Windows\\Temp e Prefetch.",
@@ -31,6 +29,7 @@ _CATEGORY_TIPS: Dict[str, str] = {
     "recycle_bin": "Esvazia a Lixeira do Windows.",
     "old_downloads": "Lista (não apaga sozinho) arquivos parados na pasta Downloads.",
     "dev_cache": "node_modules de projetos parados + cache do npm/pip/Docker.",
+    "crash_dumps": "Dumps de erro do Windows (WER) e CrashDumps — sobras de apps que travaram.",
 }
 
 
@@ -68,16 +67,18 @@ class _Tooltip:
             self._win = None
 
 
-class CleanerWindow(ctk.CTkToplevel):
-    def __init__(self, master, theme_name: str = "dark"):
-        super().__init__(master)
-        self.theme_name = theme_name
+class CleanerPanel(ctk.CTkFrame):
+    """View de Limpeza de Disco, embutida na janela do Organizador."""
 
-        self.title("Limpeza de Disco")
-        self.geometry("880x760")
-        self.minsize(760, 680)
-        self.configure(fg_color=self._c("bg"))
-        self._apply_window_icon()
+    def __init__(
+        self,
+        master,
+        theme_name: str = "dark",
+        on_back: Optional[Callable[[], None]] = None,
+    ):
+        self.theme_name = theme_name
+        super().__init__(master, fg_color=self._c("bg"), corner_radius=0)
+        self._on_back = on_back
 
         self.cat_vars: Dict[str, tk.BooleanVar] = {
             key: tk.BooleanVar(value=True) for key in CATEGORIES
@@ -99,21 +100,33 @@ class CleanerWindow(ctk.CTkToplevel):
     def _c(self, key: str) -> str:
         return palette(self.theme_name)[key]
 
-    def _apply_window_icon(self) -> None:
-        try:
-            if sys.platform == "win32" and ICON_PATH.exists():
-                self.after(200, lambda: self.iconbitmap(str(ICON_PATH)))
-        except Exception:
-            pass
+    def _back(self) -> None:
+        if self.is_running:
+            messagebox.showwarning("Aguarde", "Espere a operação atual terminar antes de voltar.")
+            return
+        if self._on_back:
+            self._on_back()
 
     # ------------------------------------------------------------------ build
 
     def _build_ui(self) -> None:
+        header_row = ctk.CTkFrame(self, fg_color="transparent")
+        header_row.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["lg"], 0))
+
+        back_btn = ctk.CTkButton(
+            header_row, text="← Voltar", command=self._back,
+            font=FONT["button"], height=32, width=100,
+            corner_radius=RADIUS["button"],
+            fg_color=self._c("neutral"), hover_color=self._c("neutral_hover"),
+            text_color="#ffffff",
+        )
+        back_btn.pack(side="left", padx=(0, SPACING["md"]))
+
         header = ctk.CTkLabel(
-            self, text="🧹  Limpeza de Disco",
+            header_row, text="🧹  Limpeza de Disco",
             font=FONT["title"], text_color=self._c("text"), anchor="w",
         )
-        header.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["lg"], 0))
+        header.pack(side="left")
 
         subtitle = ctk.CTkLabel(
             self,
