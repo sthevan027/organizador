@@ -22,6 +22,7 @@ except ImportError as exc:  # pragma: no cover - orientação ao usuário
     ) from exc
 
 from organizer import DEFAULT_MAP, load_map, organize
+from cleaner_gui import CleanerWindow
 import known_folders
 from theme import (
     FONT,
@@ -223,6 +224,31 @@ class OrganizerApp(ctk.CTk):
         right = ctk.CTkFrame(inner, fg_color="transparent")
         right.pack(side="right", fill="y")
 
+        self._cleaner_btn = ctk.CTkButton(
+            right,
+            text="🧹",
+            width=30,
+            height=30,
+            corner_radius=15,
+            font=(FONT["button"][0], 14),
+            fg_color=self._pair("header_chip"),
+            hover_color=self._pair("header_chip_hover"),
+            text_color="#ffffff",
+            border_width=0,
+            command=self._open_cleaner,
+        )
+        self._themed_register(
+            self._cleaner_btn,
+            fg_color="header_chip",
+            hover_color="header_chip_hover",
+        )
+        self._cleaner_btn.pack(side="right", padx=(0, SPACING["xs"]))
+        _Tooltip(
+            self._cleaner_btn,
+            "Limpeza de Disco",
+            self._tooltips_palette,
+        )
+
         self._theme_btn = ctk.CTkButton(
             right,
             text=self._theme_btn_text(),
@@ -246,6 +272,20 @@ class OrganizerApp(ctk.CTk):
             self._theme_btn,
             "Alternar tema claro/escuro",
             self._tooltips_palette,
+        )
+
+    def _open_cleaner(self) -> None:
+        if getattr(self, "_cleaner_window", None) is not None:
+            try:
+                self._cleaner_window.focus()
+                self._cleaner_window.lift()
+                return
+            except Exception:
+                pass
+        self._cleaner_window = CleanerWindow(self, theme_name=self.theme_name)
+        self._cleaner_window.protocol(
+            "WM_DELETE_WINDOW",
+            lambda: (self._cleaner_window.destroy(), setattr(self, "_cleaner_window", None)),
         )
 
     def _theme_btn_text(self) -> str:
