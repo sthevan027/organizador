@@ -16,12 +16,12 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import customtkinter as ctk
 
 from cleaner import CATEGORIES, CleanItem, clean, human_bytes, scan_all
-from theme import FONT, RADIUS, SPACING, palette
+from theme import DARK, FONT, LIGHT, RADIUS, SPACING, palette
 
 _CATEGORY_TIPS: Dict[str, str] = {
     "temp": "%TEMP% do usuário, C:\\Windows\\Temp e Prefetch.",
@@ -74,12 +74,12 @@ class CleanerPanel(ctk.CTkFrame):
         self,
         master,
         theme_name: str = "dark",
-        on_back: Optional[Callable[[], None]] = None,
     ):
         self.theme_name = theme_name
         super().__init__(master, fg_color=self._c("bg"), corner_radius=0)
-        self._on_back = on_back
 
+        self._tooltip_palette: dict = dict(palette(theme_name))
+        self.show_advanced = tk.BooleanVar(value=False)
         self.cat_vars: Dict[str, tk.BooleanVar] = {
             key: tk.BooleanVar(value=True) for key in CATEGORIES
         }
@@ -97,30 +97,27 @@ class CleanerPanel(ctk.CTkFrame):
 
     # ------------------------------------------------------------------ infra
 
-    def _c(self, key: str) -> str:
+    def _c(self, key: str) -> tuple[str, str]:
+        """Par (claro, escuro): o CustomTkinter escolhe sozinho conforme o
+        modo de aparência, então o painel acompanha a troca de tema."""
+        return (LIGHT[key], DARK[key])
+
+    def _hex(self, key: str) -> str:
         return palette(self.theme_name)[key]
 
-    def _back(self) -> None:
-        if self.is_running:
-            messagebox.showwarning("Aguarde", "Espere a operação atual terminar antes de voltar.")
-            return
-        if self._on_back:
-            self._on_back()
+    def apply_theme(self, theme_name: str) -> None:
+        """Atualiza o que o CustomTkinter não troca sozinho (tooltips e
+        cores de tag do log, que são widgets Tk puros)."""
+        self.theme_name = theme_name
+        self._tooltip_palette.clear()
+        self._tooltip_palette.update(palette(theme_name))
+        self._configure_log_tags()
 
     # ------------------------------------------------------------------ build
 
     def _build_ui(self) -> None:
         header_row = ctk.CTkFrame(self, fg_color="transparent")
         header_row.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["lg"], 0))
-
-        back_btn = ctk.CTkButton(
-            header_row, text="← Voltar", command=self._back,
-            font=FONT["button"], height=32, width=100,
-            corner_radius=RADIUS["button"],
-            fg_color=self._c("neutral"), hover_color=self._c("neutral_hover"),
-            text_color="#ffffff",
-        )
-        back_btn.pack(side="left", padx=(0, SPACING["md"]))
 
         header = ctk.CTkLabel(
             header_row, text="🧹  Limpeza de Disco",
@@ -172,7 +169,7 @@ class CleanerPanel(ctk.CTkFrame):
                 button_color="#ffffff", button_hover_color="#f3f4f6",
             )
             sw.pack(anchor="w", pady=SPACING["xs"])
-            _Tooltip(sw, _CATEGORY_TIPS[key], dict(palette(self.theme_name)))
+            _Tooltip(sw, _CATEGORY_TIPS[key], self._tooltip_palette)
 
     # ---- opções ---------------------------------------------------------
 
@@ -181,32 +178,48 @@ class CleanerPanel(ctk.CTkFrame):
         body = ctk.CTkFrame(card, fg_color="transparent")
         body.pack(fill="x", padx=SPACING["lg"], pady=(SPACING["sm"], SPACING["lg"]))
 
-        row1 = ctk.CTkFrame(body, fg_color="transparent")
-        row1.pack(fill="x", pady=SPACING["xs"])
-        ctk.CTkLabel(
-            row1, text="Downloads parados há mais de (dias)",
-            font=FONT["label"], text_color=self._c("text_muted"), width=260, anchor="w",
-        ).pack(side="left")
-        ctk.CTkEntry(
-            row1, textvariable=self.old_downloads_days, width=70, height=32,
-            corner_radius=RADIUS["input"], font=FONT["label"],
-            fg_color=self._c("input_bg"), text_color=self._c("text"),
-            border_color=self._c("input_border"),
-        ).pack(side="left", padx=SPACING["sm"])
+        dry_sw = ctk.CTkSwitch(
+            body, text="Modo Teste — simula sem apagar nada",
+            variable=self.dry_run, font=FONT["label"], text_color=self._c("text"),
+            progress_color=self._c("warning"),
+            button_color="#ffffff", button_hover_color="#f3f4f6",
+        )
+        dry_sw.pack(anchor="w", pady=SPACING["xs"])
 
-        row2 = ctk.CTkFrame(body, fg_color="transparent")
-        row2.pack(fill="x", pady=SPACING["xs"])
-        ctk.CTkLabel(
-            row2, text="Pasta de projetos (cache de dev)",
-            font=FONT["label"], text_color=self._c("text_muted"), width=260, anchor="w",
-        ).pack(side="left")
-        ctk.CTkEntry(
-            row2, textvariable=self.dev_search_root, height=32,
-            corner_radius=RADIUS["input"], font=FONT["label"],
-            fg_color=self._c("input_bg"), text_color=self._c("text"),
-            border_color=self._c("input_border"),
-            placeholder_text="Opcional — ex.: D:\\Projetos",
-        ).pack(side="left", fill="x", expand=True, padx=SPACING["sm"])
+        self._adv_btn = ctk.CTkButton(
+            body, text="▸  Opções avançadas", command=self._toggle_advanced,
+            font=FONT["label"], height=28, corner_radius=RADIUS["button"],
+            fg_color="transparent", hover_color=self._c("bg_alt"),
+            text_color=self._c("text_muted"), anchor="w",
+        )
+        self._adv_btn.pack(anchor="w", pady=(SPACING["sm"], 0))
+
+        self._adv_frame = ctk.CTkFrame(body, fg_color="transparent")
+
+        def _row(label_text: str) -> ctk.CTkFrame:
+            row = ctk.CTkFrame(self._adv_frame, fg_color="transparent")
+            row.pack(fill="x", pady=SPACING["xs"])
+            ctk.CTkLabel(
+                row, text=label_text, font=FONT["label"],
+                text_color=self._c("text_muted"), width=260, anchor="w",
+            ).pack(side="left")
+            return row
+
+        def _entry(row, var, **kw) -> ctk.CTkEntry:
+            return ctk.CTkEntry(
+                row, textvariable=var, height=32,
+                corner_radius=RADIUS["input"], font=FONT["label"],
+                fg_color=self._c("input_bg"), text_color=self._c("text"),
+                border_color=self._c("input_border"), **kw,
+            )
+
+        _entry(_row("Downloads parados há mais de (dias)"),
+               self.old_downloads_days, width=70).pack(side="left", padx=SPACING["sm"])
+
+        row2 = _row("Pasta de projetos (cache de dev)")
+        _entry(row2, self.dev_search_root,
+               placeholder_text="Opcional — ex.: D:\\Projetos",
+               ).pack(side="left", fill="x", expand=True, padx=SPACING["sm"])
         ctk.CTkButton(
             row2, text="Procurar", command=self._browse_dev_root,
             font=FONT["button"], height=32, width=100,
@@ -215,28 +228,18 @@ class CleanerPanel(ctk.CTkFrame):
             text_color="#ffffff",
         ).pack(side="left")
 
-        row3 = ctk.CTkFrame(body, fg_color="transparent")
-        row3.pack(fill="x", pady=SPACING["xs"])
-        ctk.CTkLabel(
-            row3, text="Projeto parado há mais de (dias)",
-            font=FONT["label"], text_color=self._c("text_muted"), width=260, anchor="w",
-        ).pack(side="left")
-        ctk.CTkEntry(
-            row3, textvariable=self.dev_stale_days, width=70, height=32,
-            corner_radius=RADIUS["input"], font=FONT["label"],
-            fg_color=self._c("input_bg"), text_color=self._c("text"),
-            border_color=self._c("input_border"),
-        ).pack(side="left", padx=SPACING["sm"])
+        _entry(_row("Projeto parado há mais de (dias)"),
+               self.dev_stale_days, width=70).pack(side="left", padx=SPACING["sm"])
 
-        dry_row = ctk.CTkFrame(body, fg_color="transparent")
-        dry_row.pack(fill="x", pady=(SPACING["md"], 0))
-        dry_sw = ctk.CTkSwitch(
-            dry_row, text="Modo Teste — simula sem apagar nada",
-            variable=self.dry_run, font=FONT["label"], text_color=self._c("text"),
-            progress_color=self._c("warning"),
-            button_color="#ffffff", button_hover_color="#f3f4f6",
-        )
-        dry_sw.pack(anchor="w")
+    def _toggle_advanced(self) -> None:
+        showing = bool(self.show_advanced.get())
+        self.show_advanced.set(not showing)
+        if showing:
+            self._adv_frame.pack_forget()
+            self._adv_btn.configure(text="▸  Opções avançadas")
+        else:
+            self._adv_frame.pack(fill="x", pady=(SPACING["xs"], 0))
+            self._adv_btn.configure(text="▾  Opções avançadas")
 
     def _browse_dev_root(self) -> None:
         folder = filedialog.askdirectory(title="Selecionar pasta de projetos")
@@ -354,12 +357,12 @@ class CleanerPanel(ctk.CTkFrame):
 
     def _configure_log_tags(self) -> None:
         inner = self.log_text._textbox  # type: ignore[attr-defined]
-        inner.tag_config("ok", foreground=self._c("log_ok"))
-        inner.tag_config("error", foreground=self._c("log_error"))
-        inner.tag_config("warning", foreground=self._c("log_warning"))
-        inner.tag_config("dryrun", foreground=self._c("log_dryrun"))
-        inner.tag_config("header", foreground=self._c("log_header"))
-        inner.tag_config("info", foreground=self._c("log_info"))
+        inner.tag_config("ok", foreground=self._hex("log_ok"))
+        inner.tag_config("error", foreground=self._hex("log_error"))
+        inner.tag_config("warning", foreground=self._hex("log_warning"))
+        inner.tag_config("dryrun", foreground=self._hex("log_dryrun"))
+        inner.tag_config("header", foreground=self._hex("log_header"))
+        inner.tag_config("info", foreground=self._hex("log_info"))
 
     def _tag_for(self, line: str) -> str:
         if line.startswith("[OK]"):
@@ -388,22 +391,49 @@ class CleanerPanel(ctk.CTkFrame):
 
     # ------------------------------------------------------------------ log queue
 
+    # Em lotes pequenos: listas longas de itens analisados/limpos não
+    # travam a janela drenando tudo de uma vez num laço síncrono.
+    _QUEUE_BATCH_SIZE = 40
+
     def _poll_log_queue(self) -> None:
+        processed = 0
         try:
-            while True:
+            while processed < self._QUEUE_BATCH_SIZE:
                 item = self.log_queue.get_nowait()
+                processed += 1
                 if isinstance(item, tuple) and len(item) == 3 and item[0] == "_progress":
                     _, current, total = item
                     pct = (current / total) if total else 1.0
-                    self.progress_var.set(pct)
-                    self.progress_bar.set(pct)
+                    self._animate_progress_to(pct)
                     self.pct_label.configure(text=f"{int(pct * 100)}%")
                     self.status_label.configure(text=f"Processando {current} de {total}…")
                 else:
                     self._log(str(item))
         except queue.Empty:
             pass
-        self.after(100, self._poll_log_queue)
+        delay = 8 if processed >= self._QUEUE_BATCH_SIZE else 100
+        self.after(delay, self._poll_log_queue)
+
+    def _animate_progress_to(self, target: float) -> None:
+        self._progress_target = target
+        if getattr(self, "_progress_animating", False):
+            return
+        self._progress_animating = True
+        self._step_progress_animation()
+
+    def _step_progress_animation(self) -> None:
+        current = self.progress_var.get()
+        target = getattr(self, "_progress_target", current)
+        delta = target - current
+        if abs(delta) < 0.004:
+            self.progress_var.set(target)
+            self.progress_bar.set(target)
+            self._progress_animating = False
+            return
+        step = current + delta * 0.35
+        self.progress_var.set(step)
+        self.progress_bar.set(step)
+        self.after(12, self._step_progress_animation)
 
     # ------------------------------------------------------------------ estado
 

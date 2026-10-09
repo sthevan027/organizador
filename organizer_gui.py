@@ -114,6 +114,8 @@ class OrganizerApp(ctk.CTk):
         self.use_system_libraries = tk.BooleanVar(value=False)
         self.unknown_name = tk.StringVar(value="Outros")
         self.config_path = tk.StringVar()
+        self.show_advanced = tk.BooleanVar(value=False)
+        self._active_view: str = "organizer"
 
         self._recent_src: List[str] = []
         self._recent_dst: List[str] = []
@@ -180,6 +182,11 @@ class OrganizerApp(ctk.CTk):
         self._build_log_card(self._organizer_view)
 
         self._cleaner_panel: Optional[CleanerPanel] = None
+        # Monta o painel de Limpeza fora da tela logo após o primeiro
+        # desenho da janela — assim o clique no 🧹 só troca a view, sem
+        # pagar o custo de criar ~30 widgets na hora (a travadinha que
+        # dava ao abrir a Limpeza pela primeira vez).
+        self.after(150, self._precreate_cleaner_panel)
 
     # ---- header -----------------------------------------------------------
 
@@ -205,8 +212,11 @@ class OrganizerApp(ctk.CTk):
         left = ctk.CTkFrame(inner, fg_color="transparent")
         left.pack(side="left", fill="y")
 
+        title_block = ctk.CTkFrame(left, fg_color="transparent")
+        title_block.pack(side="left")
+
         title = ctk.CTkLabel(
-            left,
+            title_block,
             text="Organizador de Arquivos",
             text_color="#ffffff",
             font=FONT["header_title"],
@@ -215,7 +225,7 @@ class OrganizerApp(ctk.CTk):
         title.pack(anchor="w", pady=(0, 0))
 
         subtitle = ctk.CTkLabel(
-            left,
+            title_block,
             text="Ordene em segundos — simples e seguro.",
             text_color="#b7b0a3",
             font=FONT["header_subtitle"],
@@ -223,12 +233,56 @@ class OrganizerApp(ctk.CTk):
         )
         subtitle.pack(anchor="w", pady=(0, 0))
 
-        right = ctk.CTkFrame(inner, fg_color="transparent")
-        right.pack(side="right", fill="y")
+        # Ícones de navegação, colados ao texto do título — mesmo lado.
+        nav = ctk.CTkFrame(left, fg_color="transparent")
+        nav.pack(side="left", padx=(SPACING["md"], 0))
 
-        self._cleaner_btn = ctk.CTkButton(
-            right,
-            text="🧹",
+        self._nav_organizer_btn = self._header_icon_button(
+            nav, "🗂", self._show_organizer, "Organizador de Arquivos",
+        )
+        self._nav_organizer_btn.pack(side="left", padx=(0, SPACING["xs"]))
+
+        self._nav_cleaner_btn = self._header_icon_button(
+            nav, "🧹", self._open_cleaner, "Limpeza de Disco",
+        )
+        self._nav_cleaner_btn.pack(side="left")
+
+        # Tema: sozinho no canto direito, como botão de seleção (☀ / 🌙)
+        # em vez de um botão de clique isolado.
+        self._theme_seg = ctk.CTkSegmentedButton(
+            inner,
+            values=["☀", "🌙"],
+            width=70,
+            height=30,
+            corner_radius=15,
+            font=(FONT["button"][0], 13),
+            fg_color=self._pair("header_chip"),
+            selected_color=self._pair("header_chip_hover"),
+            selected_hover_color=self._pair("header_chip_hover"),
+            unselected_color=self._pair("header_chip"),
+            unselected_hover_color=self._pair("header_chip"),
+            text_color="#ffffff",
+            command=self._on_theme_segment_change,
+        )
+        self._theme_seg.set("🌙" if self.theme_name == "dark" else "☀")
+        self._theme_seg.pack(side="right")
+        self._themed_register(
+            self._theme_seg,
+            fg_color="header_chip",
+            selected_color="header_chip_hover",
+            selected_hover_color="header_chip_hover",
+            unselected_color="header_chip",
+            unselected_hover_color="header_chip",
+        )
+        for seg_btn in self._theme_seg._buttons_dict.values():
+            _Tooltip(seg_btn, "Tema claro / escuro", self._tooltips_palette)
+
+        self._update_nav_active_state()
+
+    def _header_icon_button(self, parent, icon: str, cmd, tip: str) -> ctk.CTkButton:
+        btn = ctk.CTkButton(
+            parent,
+            text=icon,
             width=30,
             height=30,
             corner_radius=15,
@@ -237,63 +291,52 @@ class OrganizerApp(ctk.CTk):
             hover_color=self._pair("header_chip_hover"),
             text_color="#ffffff",
             border_width=0,
-            command=self._open_cleaner,
+            command=cmd,
         )
-        self._themed_register(
-            self._cleaner_btn,
-            fg_color="header_chip",
-            hover_color="header_chip_hover",
+        self._themed_register(btn, fg_color="header_chip", hover_color="header_chip_hover")
+        _Tooltip(btn, tip, self._tooltips_palette)
+        return btn
+
+    def _update_nav_active_state(self) -> None:
+        """Realça com a cor de destaque o ícone da tela atualmente aberta."""
+        organizer_active = self._active_view == "organizer"
+        self._nav_organizer_btn.configure(
+            fg_color=self._pair("header_chip_hover" if organizer_active else "header_chip")
         )
-        self._cleaner_btn.pack(side="right", padx=(0, SPACING["xs"]))
-        _Tooltip(
-            self._cleaner_btn,
-            "Limpeza de Disco",
-            self._tooltips_palette,
+        self._nav_cleaner_btn.configure(
+            fg_color=self._pair("header_chip" if organizer_active else "header_chip_hover")
         )
 
-        self._theme_btn = ctk.CTkButton(
-            right,
-            text=self._theme_btn_text(),
-            width=30,
-            height=30,
-            corner_radius=15,
-            font=(FONT["button"][0], 14),
-            fg_color=self._pair("header_chip"),
-            hover_color=self._pair("header_chip_hover"),
-            text_color="#ffffff",
-            border_width=0,
-            command=self._toggle_theme,
-        )
-        self._themed_register(
-            self._theme_btn,
-            fg_color="header_chip",
-            hover_color="header_chip_hover",
-        )
-        self._theme_btn.pack(side="right")
-        _Tooltip(
-            self._theme_btn,
-            "Alternar tema claro/escuro",
-            self._tooltips_palette,
-        )
+    def _precreate_cleaner_panel(self) -> None:
+        if self._cleaner_panel is None:
+            self._cleaner_panel = CleanerPanel(self, theme_name=self.theme_name)
 
     def _open_cleaner(self) -> None:
+        if self._active_view == "cleaner":
+            return
         if self.is_organizing:
             messagebox.showwarning("Aguarde", "Espere a organização atual terminar antes de abrir a limpeza.")
             return
-        if self._cleaner_panel is None:
-            self._cleaner_panel = CleanerPanel(
-                self, theme_name=self.theme_name, on_back=self._show_organizer,
-            )
-        self._organizer_view.pack_forget()
-        self._cleaner_panel.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
+        self._precreate_cleaner_panel()
+        self._switch_view(self._organizer_view, self._cleaner_panel)
+        self._active_view = "cleaner"
+        self._update_nav_active_state()
 
     def _show_organizer(self) -> None:
+        if self._active_view == "organizer":
+            return
+        if self._cleaner_panel is not None and self._cleaner_panel.is_running:
+            messagebox.showwarning("Aguarde", "Espere a operação atual terminar antes de voltar ao Organizador.")
+            return
         if self._cleaner_panel is not None:
-            self._cleaner_panel.pack_forget()
-        self._organizer_view.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
+            self._switch_view(self._cleaner_panel, self._organizer_view)
+        self._active_view = "organizer"
+        self._update_nav_active_state()
 
-    def _theme_btn_text(self) -> str:
-        return "☀" if self.theme_name == "dark" else "🌙"
+    def _switch_view(self, hide_widget, show_widget) -> None:
+        """Troca de tela direta — sem fade (testado e descartado: piscava)."""
+        hide_widget.pack_forget()
+        show_widget.pack(fill="both", expand=True, padx=SPACING["lg"], pady=(0, SPACING["md"]))
 
     # ---- cards helpers ----------------------------------------------------
 
@@ -338,44 +381,24 @@ class OrganizerApp(ctk.CTk):
             self.source_path, self._recent_src,
             self._browse_source,
             "Pasta que será organizada",
+            extra_cmd=self._use_downloads,
+            extra_text="Downloads",
+            extra_tip="Usar a pasta Downloads do usuário",
         )
         self._dst_combo = self._add_path_row(
             body, 1, "Destino",
             self.dest_path, self._recent_dst,
             self._browse_dest,
-            "Onde os arquivos serão colocados",
+            "Onde os arquivos serão colocados — em branco usa a própria Origem",
         )
 
-        # Linha do JSON de configuração
-        label = ctk.CTkLabel(
-            body, text="Config JSON", font=FONT["label"],
-            text_color=self._pair("text_muted"), anchor="w", width=90,
-        )
-        label.grid(row=2, column=0, padx=(0, SPACING["sm"]), pady=SPACING["sm"], sticky="w")
-        self._themed_register(label, text_color="text_muted")
-
-        cfg_entry = ctk.CTkEntry(
-            body,
-            textvariable=self.config_path,
-            font=FONT["label"],
-            height=36,
-            corner_radius=RADIUS["input"],
-            fg_color=self._pair("input_bg"),
-            text_color=self._pair("text"),
-            border_color=self._pair("input_border"),
-            placeholder_text="Opcional — arquivo JSON de categorias personalizadas",
-        )
-        cfg_entry.grid(row=2, column=1, padx=SPACING["xs"], pady=SPACING["sm"], sticky="ew")
-        self._themed_register(cfg_entry, fg_color="input_bg", text_color="text", border_color="input_border")
-
-        cfg_btn = self._secondary_button(
-            body, "Procurar", self._browse_config, tip="Selecionar arquivo JSON de mapeamento",
-        )
-        cfg_btn.grid(row=2, column=2, padx=(SPACING["xs"], 0), pady=SPACING["sm"])
+    def _use_downloads(self) -> None:
+        self.source_path.set(str(Path.home() / "Downloads"))
 
     def _add_path_row(
         self, parent, row: int, label_text: str,
         var: tk.StringVar, recents: List[str], cmd, tip_text: str,
+        *, extra_cmd=None, extra_text: str = "", extra_tip: str = "",
     ) -> ctk.CTkComboBox:
         label = ctk.CTkLabel(
             parent,
@@ -415,6 +438,13 @@ class OrganizerApp(ctk.CTk):
 
         btn = self._primary_button(parent, "Procurar", cmd, tip=tip_text, width=110)
         btn.grid(row=row, column=2, padx=(SPACING["xs"], 0), pady=SPACING["sm"])
+
+        if extra_cmd is not None:
+            extra_btn = self._secondary_button(
+                parent, extra_text, extra_cmd, tip=extra_tip, width=110,
+            )
+            extra_btn.grid(row=row, column=3, padx=(SPACING["xs"], 0), pady=SPACING["sm"])
+
         return combo
 
     # ---- opções -----------------------------------------------------------
@@ -489,19 +519,6 @@ class OrganizerApp(ctk.CTk):
         dry_sw.pack(anchor="w", pady=SPACING["xs"])
         self._themed_register(dry_sw, text_color="text", progress_color="warning")
 
-        empty_sw = ctk.CTkSwitch(
-            toggles,
-            text="Remover subpastas vazias após organizar",
-            variable=self.delete_empty,
-            font=FONT["label"],
-            text_color=self._pair("text"),
-            progress_color=self._pair("primary"),
-            button_color="#ffffff",
-            button_hover_color="#f3f4f6",
-        )
-        empty_sw.pack(anchor="w", pady=SPACING["xs"])
-        self._themed_register(empty_sw, text_color="text", progress_color="primary")
-
         # Switch "Usar bibliotecas do sistema"
         sys_libs_color = self._pair("primary") if known_folders.is_available() else self._pair("neutral")
         sys_sw = ctk.CTkSwitch(
@@ -529,9 +546,43 @@ class OrganizerApp(ctk.CTk):
             )
         self._sys_libs_switch = sys_sw
 
+        # ---- seção avançada (recolhida por padrão) ------------------------
+        self._advanced_toggle_btn = ctk.CTkButton(
+            body,
+            text="▸  Opções avançadas",
+            command=self._toggle_advanced,
+            font=FONT["label"],
+            height=28,
+            corner_radius=RADIUS["button"],
+            fg_color="transparent",
+            hover_color=self._pair("bg_alt"),
+            text_color=self._pair("text_muted"),
+            anchor="w",
+        )
+        self._advanced_toggle_btn.pack(anchor="w", pady=(SPACING["sm"], 0))
+        self._themed_register(
+            self._advanced_toggle_btn, hover_color="bg_alt", text_color="text_muted",
+        )
+
+        self._advanced_frame = ctk.CTkFrame(body, fg_color="transparent")
+        # Começa oculto — só aparece ao clicar em "Opções avançadas".
+
+        empty_sw = ctk.CTkSwitch(
+            self._advanced_frame,
+            text="Remover subpastas vazias após organizar",
+            variable=self.delete_empty,
+            font=FONT["label"],
+            text_color=self._pair("text"),
+            progress_color=self._pair("primary"),
+            button_color="#ffffff",
+            button_hover_color="#f3f4f6",
+        )
+        empty_sw.pack(anchor="w", pady=SPACING["xs"])
+        self._themed_register(empty_sw, text_color="text", progress_color="primary")
+
         # Pasta para desconhecidos
-        unk_row = ctk.CTkFrame(body, fg_color="transparent")
-        unk_row.pack(fill="x")
+        unk_row = ctk.CTkFrame(self._advanced_frame, fg_color="transparent")
+        unk_row.pack(fill="x", pady=SPACING["xs"])
 
         unk_label = ctk.CTkLabel(
             unk_row,
@@ -555,6 +606,48 @@ class OrganizerApp(ctk.CTk):
         )
         unk_entry.pack(side="left", padx=SPACING["sm"])
         self._themed_register(unk_entry, fg_color="input_bg", text_color="text", border_color="input_border")
+
+        # Config JSON personalizada
+        cfg_row = ctk.CTkFrame(self._advanced_frame, fg_color="transparent")
+        cfg_row.pack(fill="x", pady=SPACING["xs"])
+
+        cfg_label = ctk.CTkLabel(
+            cfg_row, text="Config JSON", font=FONT["label"],
+            text_color=self._pair("text_muted"), width=90, anchor="w",
+        )
+        cfg_label.pack(side="left")
+        self._themed_register(cfg_label, text_color="text_muted")
+
+        cfg_entry = ctk.CTkEntry(
+            cfg_row,
+            textvariable=self.config_path,
+            font=FONT["label"],
+            height=32,
+            corner_radius=RADIUS["input"],
+            fg_color=self._pair("input_bg"),
+            text_color=self._pair("text"),
+            border_color=self._pair("input_border"),
+            placeholder_text="Opcional — arquivo JSON de categorias personalizadas",
+            width=320,
+        )
+        cfg_entry.pack(side="left", padx=SPACING["sm"], fill="x", expand=True)
+        self._themed_register(cfg_entry, fg_color="input_bg", text_color="text", border_color="input_border")
+
+        cfg_btn = self._secondary_button(
+            cfg_row, "Procurar", self._browse_config,
+            tip="Selecionar arquivo JSON de mapeamento", width=110,
+        )
+        cfg_btn.pack(side="left")
+
+    def _toggle_advanced(self) -> None:
+        showing = bool(self.show_advanced.get())
+        self.show_advanced.set(not showing)
+        if showing:
+            self._advanced_frame.pack_forget()
+            self._advanced_toggle_btn.configure(text="▸  Opções avançadas")
+        else:
+            self._advanced_frame.pack(fill="x", pady=(SPACING["xs"], 0))
+            self._advanced_toggle_btn.configure(text="▾  Opções avançadas")
 
     def _on_mode_change(self, value: str) -> None:
         self.mode.set("copy" if value == "Copiar" else "move")
@@ -818,19 +911,20 @@ class OrganizerApp(ctk.CTk):
 
     # ------------------------------------------------------------------ tema
 
-    def _toggle_theme(self) -> None:
-        self.theme_name = "light" if self.theme_name == "dark" else "dark"
+    def _on_theme_segment_change(self, value: str) -> None:
+        target = "dark" if value == "🌙" else "light"
+        if target == self.theme_name:
+            return
+        self.theme_name = target
         save_theme(self.theme_name)
         ctk.set_appearance_mode(self.theme_name)
         self._repaint_all()
 
     def _repaint_all(self) -> None:
-        # Atualiza paleta das tooltips
         self._tooltips_palette.clear()
         self._tooltips_palette.update(palette(self.theme_name))
 
         self.configure(fg_color=self._c("bg"))
-        self._theme_btn.configure(text=self._theme_btn_text())
 
         for widget, mapping in self._themed:
             try:
@@ -840,13 +934,24 @@ class OrganizerApp(ctk.CTk):
                 continue
 
         self._configure_log_tags()
+        self._update_nav_active_state()
+        if self._cleaner_panel is not None:
+            self._cleaner_panel.apply_theme(self.theme_name)
 
     # ------------------------------------------------------------------ log queue
 
+    # Processa a fila em lotes pequenos: em pastas com muitos arquivos,
+    # drenar tudo de uma vez trava a janela por um instante (o loop fica
+    # preso no laço antes de devolver o controle pro Tkinter). Em lotes,
+    # a UI respira entre cada leva e a barra sobe de forma fluida.
+    _QUEUE_BATCH_SIZE = 40
+
     def _poll_log_queue(self) -> None:
+        processed = 0
         try:
-            while True:
+            while processed < self._QUEUE_BATCH_SIZE:
                 item = self.log_queue.get_nowait()
+                processed += 1
                 if (
                     isinstance(item, tuple)
                     and len(item) == 3
@@ -854,8 +959,7 @@ class OrganizerApp(ctk.CTk):
                 ):
                     _, current, total = item
                     pct = (current / total) if total else 1.0
-                    self.progress_var.set(pct)
-                    self.progress_bar.set(pct)
+                    self._animate_progress_to(pct)
                     self.pct_label.configure(text=f"{int(pct * 100)}%")
                     self.status_label.configure(
                         text=f"Processando {current} de {total}…"
@@ -864,7 +968,33 @@ class OrganizerApp(ctk.CTk):
                     self._log(str(item))
         except queue.Empty:
             pass
-        self.after(100, self._poll_log_queue)
+        # Fila cheia ainda → próximo lote quase imediato (mantém fluidez
+        # sem travar); fila vazia → volta ao ritmo de espera normal.
+        delay = 8 if processed >= self._QUEUE_BATCH_SIZE else 100
+        self.after(delay, self._poll_log_queue)
+
+    def _animate_progress_to(self, target: float) -> None:
+        """Interpola a barra de progresso até `target` em passos curtos,
+        em vez de saltar — dá sensação de movimento contínuo."""
+        self._progress_target = target
+        if getattr(self, "_progress_animating", False):
+            return
+        self._progress_animating = True
+        self._step_progress_animation()
+
+    def _step_progress_animation(self) -> None:
+        current = self.progress_var.get()
+        target = getattr(self, "_progress_target", current)
+        delta = target - current
+        if abs(delta) < 0.004:
+            self.progress_var.set(target)
+            self.progress_bar.set(target)
+            self._progress_animating = False
+            return
+        step = current + delta * 0.35  # ease-out
+        self.progress_var.set(step)
+        self.progress_bar.set(step)
+        self.after(12, self._step_progress_animation)
 
     def _log(self, message: str) -> None:
         tag = self._tag_for(message)

@@ -52,11 +52,17 @@ Dê duplo clique em `scripts/criar_atalho.bat`. Um atalho
 **Organizador de Arquivos** com ícone customizado será criado na sua Área de
 Trabalho, apontando para o `pythonw run.py` (GUI sem console).
 
-### Alternar tema claro/escuro
+### Navegação e tema
 
-No canto superior direito da janela há um botão `☀ / 🌙` que alterna entre
-claro e escuro. A preferência fica salva em
+Ao lado do título, dois ícones trocam de tela sem abrir outra janela: 🗂️
+**Organizador** e 🧹 **Limpeza de Disco**. No canto superior direito fica o
+seletor `☀ / 🌙` de tema claro/escuro — a preferência fica salva em
 `%APPDATA%\organizador\config.json`.
+
+Opções usadas com menos frequência (pasta para tipos não reconhecidos,
+config JSON personalizada, dias de inatividade etc.) ficam recolhidas em
+**"▸ Opções avançadas"**, tanto no Organizador quanto na Limpeza — a tela
+principal mostra só o essencial.
 
 ## 📖 Como Usar
 
@@ -151,12 +157,12 @@ em disco. Sempre analisa antes de apagar — nada é removido sem revisão.
 
 ### Pela interface gráfica
 
-Clique no ícone 🧹 no topo da janela do Organizador para trocar pra tela de
-Limpeza de Disco (mesma janela, sem abrir outra). Fluxo: marque as
-categorias → **Analisar** (sempre seguro, só lista e soma tamanhos) →
-revise o relatório → **Limpar selecionadas** (com "Modo Teste" ligado por
-padrão; desligue e confirme para remover de verdade). Use "← Voltar" pra
-retornar à tela de organização.
+Clique no ícone 🧹 ao lado do título para trocar pra tela de Limpeza de
+Disco (mesma janela, sem abrir outra). Fluxo: marque as categorias →
+**Analisar** (sempre seguro, só lista e soma tamanhos) → revise o
+relatório → **Limpar selecionadas** (com "Modo Teste" ligado por padrão;
+desligue e confirme para remover de verdade). Clique no ícone 🗂️ pra
+voltar à tela de organização.
 
 ### Pela linha de comando
 
